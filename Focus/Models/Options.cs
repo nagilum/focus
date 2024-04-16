@@ -1,4 +1,6 @@
-﻿namespace Focus;
+﻿using Focus.Models.Interfaces;
+
+namespace Focus.Models;
 
 public class Options : IOptions
 {

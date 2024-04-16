@@ -1,4 +1,4 @@
-﻿namespace Focus;
+﻿namespace Focus.Models.Interfaces;
 
 public interface IOptions
 {

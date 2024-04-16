@@ -1,4 +1,4 @@
-﻿namespace Focus;
+﻿namespace Focus.Services;
 
 public interface ICrawlerService
 {

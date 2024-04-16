@@ -1,8 +1,8 @@
-﻿namespace Focus;
+﻿using Focus.Models.Interfaces;
 
-public class Response(
-    HttpResponseMessage res,
-    long responseTime) : IResponse
+namespace Focus.Models;
+
+public class Response : IResponse
 {
     /// <summary>
     /// <inheritdoc cref="IResponse.Created"/>
@@ -12,15 +12,15 @@ public class Response(
     /// <summary>
     /// <inheritdoc cref="IResponse.StatusCode"/>
     /// </summary>
-    public int StatusCode { get; } = (int)res.StatusCode;
+    public required int StatusCode { get; init; }
 
     /// <summary>
     /// <inheritdoc cref="IResponse.StatusDescription"/>
     /// </summary>
-    public string StatusDescription { get; } = Tools.GetStatusCodeDescription((int)res.StatusCode);
+    public required string StatusDescription { get; init; }
 
     /// <summary>
     /// <inheritdoc cref="IResponse.Time"/>
     /// </summary>
-    public long Time { get; } = responseTime;
+    public required long Time { get; init; }
 }
