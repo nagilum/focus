@@ -3,6 +3,11 @@
 public interface IResponse
 {
     /// <summary>
+    /// Content type.
+    /// </summary>
+    string? ContentType { get; }
+    
+    /// <summary>
     /// When the response was added.
     /// </summary>
     DateTimeOffset Created { get; }

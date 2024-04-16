@@ -2,7 +2,7 @@
 
 namespace Focus.Models;
 
-public class QueueEntry(Uri uri) : IQueueEntry
+public class QueueEntry(Uri uri, bool playwrightRequest) : IQueueEntry
 {
     /// <summary>
     /// <inheritdoc cref="IQueueEntry.Added"/>
@@ -13,6 +13,11 @@ public class QueueEntry(Uri uri) : IQueueEntry
     /// <inheritdoc cref="IQueueEntry.Attempts"/>
     /// </summary>
     public int Attempts { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="IQueueEntry.PlaywrightRequest"/>
+    /// </summary>
+    public bool PlaywrightRequest { get; set; } = playwrightRequest;
 
     /// <summary>
     /// <inheritdoc cref="IQueueEntry.Errors"/>

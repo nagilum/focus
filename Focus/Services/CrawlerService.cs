@@ -101,7 +101,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
     {
         foreach (var uri in _options.Urls)
         {
-            _queue.Add(new(uri));
+            _queue.Add(new(uri, true));
         }
 
         this.UpdateUi(true);
@@ -232,21 +232,21 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 ConsoleColor.White, 
                 Program.NameAndVersion);
             
-            ConsoleEx.WriteAt(0, 1, ConsoleColor.DarkGray,
+            ConsoleEx.WriteAt(0, 1, ConsoleColor.Gray,
                 "Press ",
                 ConsoleColor.Blue,
                 "CTRL+C ",
-                ConsoleColor.DarkGray,
+                ConsoleColor.Gray,
                 "to abort");
             
-            ConsoleEx.WriteAt(0, 3, ConsoleColor.DarkGray, "Started:");
-            ConsoleEx.WriteAt(0, 4, ConsoleColor.DarkGray, "Duration:");
-            ConsoleEx.WriteAt(0, 5, ConsoleColor.DarkGray, "Progress:");
-            ConsoleEx.WriteAt(0, 6, ConsoleColor.DarkGray, "Requests:");
+            ConsoleEx.WriteAt(0, 3, ConsoleColor.Gray, "Started");
+            ConsoleEx.WriteAt(0, 4, ConsoleColor.Gray, "Duration");
+            ConsoleEx.WriteAt(0, 5, ConsoleColor.Gray, "Progress");
+            ConsoleEx.WriteAt(0, 6, ConsoleColor.Gray, "Requests");
             
-            ConsoleEx.WriteAt(10, 8, ConsoleColor.DarkGray, "< 450 ms");
-            ConsoleEx.WriteAt(10, 9, ConsoleColor.DarkGray, "> 450 ms < 900 ms");
-            ConsoleEx.WriteAt(10, 10, ConsoleColor.DarkGray, "> 900 ms");
+            ConsoleEx.WriteAt(10, 8, ConsoleColor.Gray, "< 450 ms");
+            ConsoleEx.WriteAt(10, 9, ConsoleColor.Gray, "> 450 ms < 900 ms");
+            ConsoleEx.WriteAt(10, 10, ConsoleColor.Gray, "> 900 ms");
             
             lock (_responseTypes)
             {
@@ -254,7 +254,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
                 foreach (var type in _responseTypes)
                 {
-                    ConsoleEx.WriteAt(10, ++top, ConsoleColor.DarkGray, type.Key);
+                    ConsoleEx.WriteAt(10, ++top, ConsoleColor.Gray, type.Key);
                 }
             }
             
@@ -272,7 +272,9 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
         // Update progress.
         var finished = _queue.Count(n => n.Finished.HasValue);
-        var percent = (int)(100.00 / _queue.Count * finished);
+        var percent = finished < _queue.Count
+            ? (int)(100.00 / _queue.Count * finished)
+            : 100;
         
         ConsoleEx.WriteAt(10, 5, 
             ConsoleColor.DarkGreen, 
@@ -348,7 +350,10 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 Environment.NewLine);
             
             await using var stream = File.Create(path);
-            await JsonSerializer.SerializeAsync(stream, _queue, _serializerOptions);
+            await JsonSerializer.SerializeAsync(
+                stream,
+                _queue.OrderBy(n => n.Added),
+                _serializerOptions);
         }
         catch (Exception ex)
         {
@@ -413,30 +418,63 @@ public class CrawlerService(IOptions options) : ICrawlerService
         
         try
         {
-            var page = await this.Browser!.NewPageAsync();
-            var watch = Stopwatch.StartNew();
-
-            var gotoOptions = new PageGotoOptions
-            {
-                Timeout = _options.RequestTimeout
-            };
+            string? contentType;
+            int statusCode;
+            Stopwatch watch;
             
-            var res = await page.GotoAsync(entry.Url.ToString(), gotoOptions)
-                      ?? throw new Exception($"Unable to get a valid HTTP response from {entry.Url}");
+            if (entry.PlaywrightRequest)
+            {
+                var page = await this.Browser!.NewPageAsync();
+                var gotoOptions = new PageGotoOptions
+                {
+                    Timeout = _options.RequestTimeout
+                };
 
-            watch.Stop();
+                watch = Stopwatch.StartNew();
+                
+                var res = await page.GotoAsync(entry.Url.ToString(), gotoOptions)
+                          ?? throw new Exception($"Unable to get a valid HTTP response from {entry.Url}");
+                
+                watch.Stop();
 
-            if (res.Status is >= 200 and <= 300)
+                statusCode = res.Status;
+                contentType = await res.HeaderValueAsync("content-type");
+                
+                var isHtml = contentType?.Contains("text/html", StringComparison.InvariantCultureIgnoreCase);
+
+                if (isHtml is true)
+                {
+                    await this.ParseResponseContent(entry, page);
+                }
+            }
+            else
+            {
+                using var client = new HttpClient();
+                
+                client.Timeout = TimeSpan.FromMilliseconds(_options.RequestTimeout);
+
+                watch = Stopwatch.StartNew();
+
+                var res = await client.GetAsync(entry.Url, cancellationToken);
+                
+                watch.Stop();
+
+                contentType = res.Content.Headers.ContentType?.MediaType;
+                statusCode = (int)res.StatusCode;
+            }
+
+            var statusDescription = Tools.GetStatusDescription(statusCode);
+
+            if (statusCode is >= 200 and <= 300)
             {
                 entry.Finished = DateTimeOffset.Now;
             }
-
-            var statusDescription = Tools.GetStatusDescription(res.Status);
             
             entry.Responses.Add(
                 new()
                 {
-                    StatusCode = res.Status,
+                    ContentType = contentType,
+                    StatusCode = statusCode,
                     StatusDescription = statusDescription,
                     Time = watch.ElapsedMilliseconds
                 });
@@ -453,15 +491,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 _responseTimes[responseTimeRange]++;
             }
 
-            responseType = $"{res.Status} {statusDescription}";
-
-            var contentType = await res.HeaderValueAsync("content-type");
-            var isHtml = contentType?.Contains("text/html", StringComparison.InvariantCultureIgnoreCase);
-
-            if (isHtml is true)
-            {
-                await this.ParseResponseContent(entry, page);
-            }
+            responseType = $"{statusCode} {statusDescription}";
         }
         catch (TimeoutException)
         {
@@ -550,9 +580,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
                 if (!alreadyAdded)
                 {
-                    // TODO: Add type of URL based on tag it came from. This will be used to determine if a Playwright request is to be made, or just a HTTP client request.
-                    
-                    _queue.Add(new QueueEntry(uri));
+                    _queue.Add(new QueueEntry(uri, tag == "a"));
                 }
             }
         }

@@ -13,6 +13,11 @@ public interface IQueueEntry
     int Attempts { get; }
     
     /// <summary>
+    /// Whether to do a Playwright or HTTP client request.
+    /// </summary>
+    bool PlaywrightRequest { get; }
+    
+    /// <summary>
     /// List of request errors.
     /// </summary>
     List<RequestError> Errors { get; }
