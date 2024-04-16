@@ -344,6 +344,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 "Writing queue to ",
                 ConsoleColor.Yellow,
                 path,
+                Environment.NewLine,
                 Environment.NewLine);
             
             await using var stream = File.Create(path);
