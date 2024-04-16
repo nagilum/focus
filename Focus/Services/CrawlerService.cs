@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using Focus.Models;
 using Focus.Models.Interfaces;
+using HtmlAgilityPack;
 
 namespace Focus.Services;
 
@@ -96,7 +97,6 @@ public class CrawlerService(IOptions options) : ICrawlerService
         }
         
         Console.ResetColor();
-        Console.Clear();
 
         await this.WriteQueueToDisk();
     }
@@ -326,13 +326,39 @@ public class CrawlerService(IOptions options) : ICrawlerService
     /// <param name="entry">Queue entry.</param>
     /// <param name="content">HTTP response content.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    private async Task ParseResponseContent(QueueEntry entry, HttpContent content, CancellationToken cancellationToken)
+    private async Task ParseResponseContent(IQueueEntry entry, HttpContent content, CancellationToken cancellationToken)
     {
         try
         {
-            var html = await content.ReadAsStringAsync(cancellationToken);
+            var doc = new HtmlDocument();
             
-            // TODO: Analyze HTML and add new URLs to queue.
+            doc.Load(await content.ReadAsStreamAsync(cancellationToken));
+
+            var nodes = doc.DocumentNode.SelectNodes("//a");
+
+            foreach (var node in nodes)
+            {
+                var href = node.GetAttributeValue("href", null);
+
+                if (href.StartsWith('#'))
+                {
+                    continue;
+                }
+
+                if (!Uri.TryCreate(entry.Url, href, out var uri) ||
+                    !entry.Url.IsBaseOf(uri))
+                {
+                    continue;
+                }
+
+                var url = uri.ToString();
+                var alreadyAdded = _queue.Any(n => n.Url.ToString() == url);
+
+                if (!alreadyAdded)
+                {
+                    _queue.Add(new QueueEntry(uri));
+                }
+            }
         }
         catch
         {
@@ -410,7 +436,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
         // Update progress.
         var finished = _queue.Count(n => n.Finished.HasValue);
-        var percent = 100.00 / _queue.Count * finished;
+        var percent = (int)(100.00 / _queue.Count * finished);
         
         Console.CursorLeft = 10;
         Console.CursorTop = 5;
@@ -433,13 +459,14 @@ public class CrawlerService(IOptions options) : ICrawlerService
             foreach (var responseTimeRange in Enum.GetValues<ResponseTimeRange>())
             {
                 var index = (int)responseTimeRange;
-                var count = _responseTimes[responseTimeRange].ToString();
+                var value = _responseTimes[responseTimeRange];
+                var count = value.ToString();
 
                 count = new string(' ', 8 - count.Length) + count;
             
                 Console.CursorLeft = 0;
                 Console.CursorTop = 8 + index;
-                Console.ForegroundColor = ConsoleColor.DarkYellow;
+                Console.ForegroundColor = value > 0 ? ConsoleColor.DarkYellow : ConsoleColor.DarkGray;
                 Console.Write(count);
             }
         }
@@ -472,12 +499,22 @@ public class CrawlerService(IOptions options) : ICrawlerService
             Directory.GetCurrentDirectory(),
             $"queue-{_started:yyyy-MM-dd-HH-mm-ss}.json");
 
+        int top; 
+
+        lock (_responseTypes)
+        {
+            top = 13 + _responseTypes.Count;
+        }
+
+        Console.CursorLeft = 0;
+        Console.CursorTop = top;
+
         try
         {
+            Console.WriteLine($"Writing queue to {path}");
+            
             await using var stream = File.Create(path);
             await JsonSerializer.SerializeAsync(stream, _queue, _serializerOptions);
-            
-            Console.WriteLine($"Wrote queue to {path}");
         }
         catch (Exception ex)
         {

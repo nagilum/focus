@@ -50,8 +50,6 @@ internal static class Program
         var crawler = new CrawlerService(options);
 
         await crawler.Run(source.Token);
-        
-        Console.ResetColor();
 
         if (source.IsCancellationRequested)
         {
