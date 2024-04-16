@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Focus.Models;
 using Focus.Models.Interfaces;
@@ -427,7 +428,8 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 var page = await this.Browser!.NewPageAsync();
                 var gotoOptions = new PageGotoOptions
                 {
-                    Timeout = _options.RequestTimeout
+                    Timeout = _options.RequestTimeout,
+                    WaitUntil = WaitUntilState.DOMContentLoaded
                 };
 
                 watch = Stopwatch.StartNew();
