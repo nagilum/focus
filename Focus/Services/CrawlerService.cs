@@ -1,21 +1,14 @@
 ﻿using System.Diagnostics;
-using System.Net.Http.Headers;
 using System.Text.Json;
 using Focus.Models;
 using Focus.Models.Interfaces;
-using HtmlAgilityPack;
+using Microsoft.Playwright;
 
 namespace Focus.Services;
 
 public class CrawlerService(IOptions options) : ICrawlerService
 {
     #region Fields
-
-    private readonly JsonSerializerOptions _serializerOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true
-    };
     
     /// <summary>
     /// Parsed options.
@@ -43,6 +36,15 @@ public class CrawlerService(IOptions options) : ICrawlerService
     private readonly Dictionary<string, int> _responseTypes = new();
     
     /// <summary>
+    /// JSON serializer options.
+    /// </summary>
+    private readonly JsonSerializerOptions _serializerOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true
+    };
+    
+    /// <summary>
     /// When the crawl started.
     /// </summary>
     private readonly DateTimeOffset _started = DateTimeOffset.Now;
@@ -50,6 +52,11 @@ public class CrawlerService(IOptions options) : ICrawlerService
     #endregion
     
     #region Properties
+    
+    /// <summary>
+    /// Playwright browser.
+    /// </summary>
+    private IBrowser? Browser { get; set; }
     
     /// <summary>
     /// Response types on last loop.
@@ -69,6 +76,17 @@ public class CrawlerService(IOptions options) : ICrawlerService
     #endregion
     
     #region ICrawlerService implementations
+
+    /// <summary>
+    /// <inheritdoc cref="ICrawlerService.DisposePlaywright"/>
+    /// </summary>
+    public async Task DisposePlaywright()
+    {
+        if (this.Browser is not null)
+        {
+            await this.Browser.CloseAsync();
+        }
+    }
     
     /// <summary>
     /// <inheritdoc cref="ICrawlerService.Run"/>
@@ -99,6 +117,36 @@ public class CrawlerService(IOptions options) : ICrawlerService
         Console.ResetColor();
 
         await this.WriteQueueToDisk();
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="ICrawlerService.SetupPlaywright"/>
+    /// </summary>
+    public async Task<bool> SetupPlaywright()
+    {
+        try
+        {
+            Console.WriteLine("Setting up Playwright..");
+            
+            Microsoft.Playwright.Program.Main(["install"]);
+            
+            var instance = await Playwright.CreateAsync();
+
+            this.Browser = _options.RenderingEngine switch
+            {
+                RenderingEngine.Chromium => await instance.Chromium.LaunchAsync(),
+                RenderingEngine.Firefox => await instance.Firefox.LaunchAsync(),
+                RenderingEngine.Webkit => await instance.Webkit.LaunchAsync(),
+                _ => throw new Exception($"Invalid rendering engine: {_options.RenderingEngine}")
+            };
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error: {ex.Message}");
+            return false;
+        }
     }
 
     #endregion
@@ -139,93 +187,6 @@ public class CrawlerService(IOptions options) : ICrawlerService
     }
     
     /// <summary>
-    /// Get the status description matching the code.
-    /// </summary>
-    /// <param name="code">HTTP status code.</param>
-    /// <returns>HTTP status code description.</returns>
-    /// <exception cref="Exception">Throw if the code is unmatched.</exception>
-    public string GetStatusCodeDescription(int code)
-    {
-        return code switch
-        {
-            // 1xx
-            100 => "Continue",
-            101 => "Switching Protocols",
-            102 => "Processing",
-            103 => "Early Hints",
-            
-            // 2xx
-            200 => "Ok",
-            201 => "Created",
-            202 => "Accepted",
-            203 => "Non-Authoritative Information",
-            204 => "No Content",
-            205 => "Reset Content",
-            206 => "Partial Content",
-            207 => "Multi-Status",
-            208 => "Already Reported",
-            226 => "IM Used",
-            
-            // 3xx
-            300 => "Multiple Choices",
-            301 => "Moved Permanently",
-            302 => "Found",
-            303 => "See Other",
-            304 => "Not Modified",
-            305 => "Use Proxy",
-            307 => "Temporary Redirect",
-            308 => "Permanent Redirect",
-            
-            // 4xx
-            400 => "Bad Request",
-            401 => "Unauthorized",
-            402 => "Payment Required",
-            403 => "Forbidden",
-            404 => "Not Found",
-            405 => "Method Not Allowed",
-            406 => "Not Acceptable",
-            407 => "Proxy Authentication Required",
-            408 => "Request Timeout",
-            409 => "Conflict",
-            410 => "Gone",
-            411 => "Length Required",
-            412 => "Precondition Failed",
-            413 => "Payload Too Large",
-            414 => "URI Too Long",
-            415 => "Unsupported Media Type",
-            416 => "Range Not Satisfiable",
-            417 => "Expectation Failed",
-            418 => "I'm a teapot",
-            421 => "Misdirected Request",
-            422 => "Unprocessable Content",
-            423 => "Locked",
-            424 => "Failed Dependency",
-            425 => "Too Early",
-            426 => "Upgrade Required",
-            428 => "Precondition Required",
-            429 => "Too Many Requests",
-            431 => "Request Header Fields Too Large",
-            451 => "Unavailable For Legal Reasons",
-            
-            // 5xx
-            500 => "Internal Server Error",
-            501 => "Not Implemented",
-            502 => "Bad Gateway",
-            503 => "Service Unavailable",
-            504 => "Gateway Timeout",
-            505 => "HTTP Version Not Supported",
-            506 => "Variant Also Negotiates",
-            507 => "Insufficient Storage",
-            508 => "Loop Detected",
-            510 => "Not Extended",
-            511 => "Network Authentication Required",
-            
-            // Unknown
-            _ => throw new Exception($"Unknown HTTP Status Code: {code}")
-        };
-    }
-    
-    /// <summary>
     /// Crawl the given queue entry and update tracking data.
     /// </summary>
     /// <param name="entry">Queue entry.</param>
@@ -243,34 +204,26 @@ public class CrawlerService(IOptions options) : ICrawlerService
         
         try
         {
-            using var client = new HttpClient();
-            
-            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
-            client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue(Program.Name, Program.Version));
-            
-            client.Timeout = _options.RequestTimeout;
-
+            var page = await this.Browser!.NewPageAsync();
             var watch = Stopwatch.StartNew();
-            var res = await client.GetAsync(entry.Url, cancellationToken);
+            var res = await page.GotoAsync(entry.Url.ToString())
+                      ?? throw new Exception($"Unable to get a valid HTTP response from {entry.Url}");
 
-            if (res.IsSuccessStatusCode)
+            watch.Stop();
+
+            if (res.Status is >= 200 and <= 300)
             {
                 entry.Finished = DateTimeOffset.Now;
             }
             
-            watch.Stop();
-
-            var statusCode = (int)res.StatusCode;
-            var statusDescription = this.GetStatusCodeDescription(statusCode);
-            
             entry.Responses.Add(
                 new()
                 {
-                    StatusCode = statusCode,
-                    StatusDescription = statusDescription,
+                    StatusCode = res.Status,
+                    StatusDescription = res.StatusText,
                     Time = watch.ElapsedMilliseconds
                 });
-
+            
             var responseTimeRange = watch.ElapsedMilliseconds switch
             {
                 < 450 => ResponseTimeRange.LessThan450Ms,
@@ -283,11 +236,25 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 _responseTimes[responseTimeRange]++;
             }
 
-            responseType = $"{statusCode} {statusDescription}";
-            
-            if (res.Content.Headers.ContentType?.MediaType?.Contains("text/html", StringComparison.InvariantCultureIgnoreCase) is true)
+            responseType = $"{res.Status} {res.StatusText}";
+
+            var isHtml = false;
+
+            foreach (var (key, value) in res.Headers)
             {
-                await this.ParseResponseContent(entry, res.Content, cancellationToken);
+                if (!key.Equals("content-type", StringComparison.InvariantCultureIgnoreCase) ||
+                    !value.Contains("text/html", StringComparison.InvariantCultureIgnoreCase))
+                {
+                    continue;
+                }
+
+                isHtml = true;
+                break;
+            }
+
+            if (isHtml)
+            {
+                await this.ParseResponseContent(entry, page);
             }
         }
         catch (TimeoutException)
@@ -321,37 +288,41 @@ public class CrawlerService(IOptions options) : ICrawlerService
     }
 
     /// <summary>
-    /// Attempt to parse the response content for new URLs to add to the queue.
+    /// Extract new URLs to crawl.
     /// </summary>
     /// <param name="entry">Queue entry.</param>
-    /// <param name="content">HTTP response content.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    private async Task ParseResponseContent(IQueueEntry entry, HttpContent content, CancellationToken cancellationToken)
+    /// <param name="page">Playwright page.</param>
+    private async Task ParseResponseContent(IQueueEntry entry, IPage page)
     {
-        try
+        var selectors = new Dictionary<string, string>
         {
-            var doc = new HtmlDocument();
-            
-            doc.Load(await content.ReadAsStreamAsync(cancellationToken));
+            { "a", "href" },
+            { "img", "src" },
+            { "link", "href" },
+            { "script", "src" }
+        };
 
-            var nodes = doc.DocumentNode.SelectNodes("//a");
+        foreach (var (tag, attr) in selectors)
+        {
+            var hrefs = page.Locator($"//{tag}[@{attr}]");
+            var count = await hrefs.CountAsync();
 
-            foreach (var node in nodes)
+            for (var i = 0; i < count; i++)
             {
-                var href = node.GetAttributeValue("href", null);
+                var url = await hrefs.Nth(i).GetAttributeAsync(attr);
 
-                if (href.StartsWith('#'))
+                if (url?.StartsWith('#') is true ||
+                    url?.StartsWith('?') is true ||
+                    !Uri.TryCreate(entry.Url, url, out var uri) ||
+                    !uri.IsAbsoluteUri ||
+                    !entry.Url.IsBaseOf(uri) ||
+                    string.IsNullOrWhiteSpace(uri.DnsSafeHost))
                 {
                     continue;
                 }
-
-                if (!Uri.TryCreate(entry.Url, href, out var uri) ||
-                    !entry.Url.IsBaseOf(uri))
-                {
-                    continue;
-                }
-
-                var url = uri.ToString();
+                
+                url = uri.ToString();
+                
                 var alreadyAdded = _queue.Any(n => n.Url.ToString() == url);
 
                 if (!alreadyAdded)
@@ -359,10 +330,6 @@ public class CrawlerService(IOptions options) : ICrawlerService
                     _queue.Add(new QueueEntry(uri));
                 }
             }
-        }
-        catch
-        {
-            // Do nothing.
         }
     }
 
@@ -400,7 +367,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 Program.NameAndVersion,
                 "Press CTRL+C to abort",
                 "",
-                $"Started:  {_started:yyyy-MM-dd} {_started:HH:mm}",
+                "Started:  ",
                 "Duration: ",
                 "Progress: ",
                 "Requests: ",
@@ -424,6 +391,16 @@ public class CrawlerService(IOptions options) : ICrawlerService
             {
                 Console.WriteLine(line);
             }
+
+            Console.CursorLeft = 6;
+            Console.CursorTop = 1;
+            Console.ForegroundColor = ConsoleColor.Blue;
+            Console.Write("CTRL+C");
+            
+            Console.CursorLeft = 10;
+            Console.CursorTop = 3;
+            Console.ForegroundColor = ConsoleColor.DarkGreen;
+            Console.Write($"{_started:yyyy-MM-dd} {_started:HH:mm}");
         }
         
         // Update duration.

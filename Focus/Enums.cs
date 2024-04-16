@@ -1,5 +1,12 @@
 ﻿namespace Focus;
 
+public enum RenderingEngine
+{
+    Chromium,
+    Firefox,
+    Webkit
+}
+
 public enum ResponseTimeRange
 {
     LessThan450Ms,

@@ -49,7 +49,13 @@ internal static class Program
 
         var crawler = new CrawlerService(options);
 
+        if (!await crawler.SetupPlaywright())
+        {
+            return;
+        } 
+
         await crawler.Run(source.Token);
+        await crawler.DisposePlaywright();
 
         if (source.IsCancellationRequested)
         {
@@ -79,6 +85,35 @@ internal static class Program
 
             switch (args[i])
             {
+                case "-e":
+                    if (i == args.Count - 1)
+                    {
+                        Console.WriteLine("Error: -e must be followed by the name of the rendering engine to use.");
+                        return false;
+                    }
+
+                    switch (args[i + 1].ToLower())
+                    {
+                        case "chromium":
+                            options.RenderingEngine = RenderingEngine.Chromium;
+                            break;
+                        
+                        case "firefox":
+                            options.RenderingEngine = RenderingEngine.Firefox;
+                            break;
+                        
+                        case "webkit":
+                            options.RenderingEngine = RenderingEngine.Webkit;
+                            break;
+                        
+                        default:
+                            Console.WriteLine($"Error: Invalid value for -e: {args[i + 1]}");
+                            return false;
+                    }
+
+                    skip = true;
+                    break;
+                
                 case "-r":
                     if (i == args.Count - 1)
                     {
@@ -148,6 +183,7 @@ internal static class Program
             "  focus <url> [<options>]",
             "",
             "Options:",
+            "  -e <name>       Set which rendering engine. Options are chromium, firefox, and webkit. Defaults to chromium.",
             "  -r <attempts>   Retries all failed (non 2xx) requests n times. Defaults to 0.",
             "  -t <seconds>    Set request timeout, in seconds. Defaults to 10.",
             "",

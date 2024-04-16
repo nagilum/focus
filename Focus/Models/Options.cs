@@ -10,6 +10,11 @@ public class Options : IOptions
     public int MaxRetryAttempts { get; set; }
 
     /// <summary>
+    /// <inheritdoc cref="IOptions.RenderingEngine"/>
+    /// </summary>
+    public RenderingEngine RenderingEngine { get; set; } = RenderingEngine.Chromium;
+
+    /// <summary>
     /// <inheritdoc cref="IOptions.RequestTimeout"/>
     /// </summary>
     public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(10);

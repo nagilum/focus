@@ -8,6 +8,11 @@ public interface IOptions
     int MaxRetryAttempts { get; }
     
     /// <summary>
+    /// Which rendering engine to use.
+    /// </summary>
+    RenderingEngine RenderingEngine { get; }
+    
+    /// <summary>
     /// Request timeout, in seconds.
     /// </summary>
     TimeSpan RequestTimeout { get; }
