@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.Json;
 using Focus.Models;
 using Focus.Models.Interfaces;
@@ -18,7 +19,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
     /// <summary>
     /// Queue entries.
     /// </summary>
-    private readonly List<QueueEntry> _queue = [];
+    private readonly ConcurrentBag<QueueEntry> _queue = [];
 
     /// <summary>
     /// Response time ranges.
@@ -93,9 +94,21 @@ public class CrawlerService(IOptions options) : ICrawlerService
     /// </summary>
     public async Task Run(CancellationToken cancellationToken)
     {
-        _queue.AddRange(_options.Urls.Select(n => new QueueEntry(n)));
+        foreach (var uri in _options.Urls)
+        {
+            _queue.Add(new(uri));
+        }
 
         this.UpdateUi(true);
+
+        try
+        {
+            new Thread(UpdateUiThreadFunc).Start();
+        }
+        catch
+        {
+            // Do nothing.
+        }
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -108,15 +121,38 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 break;
             }
 
-            await Parallel.ForEachAsync(entries, cancellationToken, async (entry, token) =>
-                await this.HandleQueueEntry(entry, token));
-            
-            this.UpdateUi(false);
+            try
+            {
+                await Parallel.ForEachAsync(entries, cancellationToken, async (entry, token) =>
+                    await this.HandleQueueEntry(entry, token));
+            }
+            catch (Exception)
+            {
+                // Do nothing.
+            }
         }
         
         Console.ResetColor();
 
         await this.WriteQueueToDisk();
+        return;
+
+        // UI update thread.
+        async void UpdateUiThreadFunc()
+        {
+            try
+            {
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    this.UpdateUi(false);
+                    await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+                }
+            }
+            catch
+            {
+                // Do nothing.
+            }
+        }
     }
 
     /// <summary>
@@ -215,12 +251,14 @@ public class CrawlerService(IOptions options) : ICrawlerService
             {
                 entry.Finished = DateTimeOffset.Now;
             }
+
+            var statusDescription = Tools.GetStatusDescription(res.Status);
             
             entry.Responses.Add(
                 new()
                 {
                     StatusCode = res.Status,
-                    StatusDescription = res.StatusText,
+                    StatusDescription = statusDescription,
                     Time = watch.ElapsedMilliseconds
                 });
             
@@ -236,23 +274,12 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 _responseTimes[responseTimeRange]++;
             }
 
-            responseType = $"{res.Status} {res.StatusText}";
+            responseType = $"{res.Status} {statusDescription}";
 
-            var isHtml = false;
+            var contentType = await res.HeaderValueAsync("content-type");
+            var isHtml = contentType?.Contains("text/html", StringComparison.InvariantCultureIgnoreCase);
 
-            foreach (var (key, value) in res.Headers)
-            {
-                if (!key.Equals("content-type", StringComparison.InvariantCultureIgnoreCase) ||
-                    !value.Contains("text/html", StringComparison.InvariantCultureIgnoreCase))
-                {
-                    continue;
-                }
-
-                isHtml = true;
-                break;
-            }
-
-            if (isHtml)
+            if (isHtml is true)
             {
                 await this.ParseResponseContent(entry, page);
             }
@@ -264,7 +291,22 @@ public class CrawlerService(IOptions options) : ICrawlerService
         }
         catch (Exception ex)
         {
-            responseType = ex.Message;
+            if (ex.Message.StartsWith("net::"))
+            {
+                responseType = ex.Message[5..];
+
+                var len = responseType.IndexOf(' ');
+
+                if (len > -1)
+                {
+                    responseType = responseType[..len];
+                }
+            }
+            else
+            {
+                responseType = ex.Message;
+            }
+            
             entry.Errors.Add(new RequestError(ex.Message));
         }
 
@@ -422,7 +464,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
         // Update requests per. second.
         var requestsPerSecond = finished > 0
-            ? duration.TotalSeconds / finished
+            ? finished / duration.TotalSeconds
             : 0;
         
         Console.CursorLeft = 10;

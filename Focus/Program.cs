@@ -43,6 +43,11 @@ internal static class Program
 
         Console.CancelKeyPress += (_, e) =>
         {
+            Console.CursorLeft = 6;
+            Console.CursorTop = 1;
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.Write("CTRL+C");
+            
             source.Cancel();
             e.Cancel = true;
         };
@@ -56,11 +61,7 @@ internal static class Program
 
         await crawler.Run(source.Token);
         await crawler.DisposePlaywright();
-
-        if (source.IsCancellationRequested)
-        {
-            Console.WriteLine("Aborted by user!");
-        }
+        await source.CancelAsync();
     }
 
     /// <summary>
