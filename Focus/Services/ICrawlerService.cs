@@ -17,4 +17,15 @@ public interface ICrawlerService
     /// Setup Playwright instance.
     /// </summary>
     Task<bool> SetupPlaywright();
+
+    /// <summary>
+    /// Update/redraw the UI.
+    /// </summary>
+    /// <param name="redraw">Whether to redraw the whole UI.</param>
+    void UpdateUi(bool redraw);
+
+    /// <summary>
+    /// Write queue to disk.
+    /// </summary>
+    Task WriteQueueToDisk();
 }

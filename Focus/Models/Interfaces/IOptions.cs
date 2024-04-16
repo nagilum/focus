@@ -15,7 +15,7 @@ public interface IOptions
     /// <summary>
     /// Request timeout, in seconds.
     /// </summary>
-    TimeSpan RequestTimeout { get; }
+    float RequestTimeout { get; }
     
     /// <summary>
     /// List of URLs to start with.

@@ -10,6 +10,11 @@ namespace Focus.Services;
 public class CrawlerService(IOptions options) : ICrawlerService
 {
     #region Fields
+
+    /// <summary>
+    /// Number of active requests.
+    /// </summary>
+    private int _activeRequests;
     
     /// <summary>
     /// Parsed options.
@@ -131,10 +136,13 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 // Do nothing.
             }
         }
+
+        while (_activeRequests > 0)
+        {
+            await Task.Delay(100, cancellationToken);
+        }
         
         Console.ResetColor();
-
-        await this.WriteQueueToDisk();
         return;
 
         // UI update thread.
@@ -162,7 +170,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
     {
         try
         {
-            Console.WriteLine("Setting up Playwright..");
+            ConsoleEx.Write("Setting up Playwright..");
             
             Microsoft.Playwright.Program.Main(["install"]);
             
@@ -180,8 +188,170 @@ public class CrawlerService(IOptions options) : ICrawlerService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error: {ex.Message}");
+            ConsoleEx.WriteError(ex.Message);
             return false;
+        }
+    }
+    
+    /// <summary>
+    /// Update/redraw the UI.
+    /// </summary>
+    /// <param name="redraw">Whether to redraw the whole UI.</param>
+    public void UpdateUi(bool redraw)
+    {
+        if (!redraw)
+        {
+            if (this.WindowHeight != Console.WindowHeight ||
+                this.WindowWidth != Console.WindowWidth)
+            {
+                this.WindowHeight = Console.WindowHeight;
+                this.WindowWidth = Console.WindowWidth;
+                
+                redraw = true;
+            }
+
+            lock (_responseTypes)
+            {
+                if (this.ResponseTypes != _responseTypes.Count)
+                {
+                    this.ResponseTypes = _responseTypes.Count;
+                    redraw = true;
+                }
+            }
+        }
+
+        int top;
+
+        if (redraw)
+        {
+            Console.CursorVisible = false;
+            Console.ResetColor();
+            Console.Clear();
+            
+            ConsoleEx.WriteAt(0, 0, 
+                ConsoleColor.White, 
+                Program.NameAndVersion);
+            
+            ConsoleEx.WriteAt(0, 1, ConsoleColor.DarkGray,
+                "Press ",
+                ConsoleColor.Blue,
+                "CTRL+C ",
+                ConsoleColor.DarkGray,
+                "to abort");
+            
+            ConsoleEx.WriteAt(0, 3, ConsoleColor.DarkGray, "Started:");
+            ConsoleEx.WriteAt(0, 4, ConsoleColor.DarkGray, "Duration:");
+            ConsoleEx.WriteAt(0, 5, ConsoleColor.DarkGray, "Progress:");
+            ConsoleEx.WriteAt(0, 6, ConsoleColor.DarkGray, "Requests:");
+            
+            ConsoleEx.WriteAt(10, 8, ConsoleColor.DarkGray, "< 450 ms");
+            ConsoleEx.WriteAt(10, 9, ConsoleColor.DarkGray, "> 450 ms < 900 ms");
+            ConsoleEx.WriteAt(10, 10, ConsoleColor.DarkGray, "> 900 ms");
+            
+            lock (_responseTypes)
+            {
+                top = 11;
+
+                foreach (var type in _responseTypes)
+                {
+                    ConsoleEx.WriteAt(10, ++top, ConsoleColor.DarkGray, type.Key);
+                }
+            }
+            
+            ConsoleEx.WriteAt(10, 3, 
+                ConsoleColor.DarkGreen, 
+                $"{_started:yyyy-MM-dd} {_started:HH:mm}");
+        }
+        
+        // Update duration.
+        var duration = DateTimeOffset.Now - _started;
+
+        ConsoleEx.WriteAt(10, 4, 
+            ConsoleColor.DarkGreen, 
+            this.GetFormattedTimeSpan(duration));
+
+        // Update progress.
+        var finished = _queue.Count(n => n.Finished.HasValue);
+        var percent = (int)(100.00 / _queue.Count * finished);
+        
+        ConsoleEx.WriteAt(10, 5, 
+            ConsoleColor.DarkGreen, 
+            $"{finished} ({percent}%) of {_queue.Count}");
+
+        // Update requests per. second.
+        var requestsPerSecond = finished > 0
+            ? finished / duration.TotalSeconds
+            : 0;
+        
+        ConsoleEx.WriteAt(10, 6, 
+            ConsoleColor.DarkGreen, 
+            $"~{(int)requestsPerSecond}/s        ");
+
+        // Update response times.
+        lock (_responseTimes)
+        {
+            foreach (var responseTimeRange in Enum.GetValues<ResponseTimeRange>())
+            {
+                var index = (int)responseTimeRange;
+                var value = _responseTimes[responseTimeRange];
+                var count = value.ToString();
+
+                count = new string(' ', 8 - count.Length) + count;
+                
+                ConsoleEx.WriteAt(0, 8 + index, 
+                    value > 0 ? ConsoleColor.DarkYellow : ConsoleColor.DarkGray, 
+                    count);
+            }
+        }
+
+        // Update response types.
+        top = 11;
+
+        lock (_responseTypes)
+        {
+            foreach (var responseType in _responseTypes.OrderBy(n => n.Key))
+            {
+                var count = responseType.Value.ToString();
+            
+                count = new string(' ', 8 - count.Length) + count;
+                
+                ConsoleEx.WriteAt(0, ++top, 
+                    ConsoleColor.DarkCyan, 
+                    count);
+            }            
+        }
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="ICrawlerService.WriteQueueToDisk"/>
+    /// </summary>
+    public async Task WriteQueueToDisk()
+    {
+        var path = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            $"queue-{_started:yyyy-MM-dd-HH-mm-ss}.json");
+
+        int top; 
+
+        lock (_responseTypes)
+        {
+            top = 13 + _responseTypes.Count;
+        }
+
+        try
+        {
+            ConsoleEx.WriteAt(0, top,
+                "Writing queue to ",
+                ConsoleColor.Yellow,
+                path,
+                Environment.NewLine);
+            
+            await using var stream = File.Create(path);
+            await JsonSerializer.SerializeAsync(stream, _queue, _serializerOptions);
+        }
+        catch (Exception ex)
+        {
+            ConsoleEx.WriteError(ex.Message);
         }
     }
 
@@ -229,6 +399,8 @@ public class CrawlerService(IOptions options) : ICrawlerService
     /// <param name="cancellationToken">Cancellation token.</param>
     private async Task HandleQueueEntry(QueueEntry entry, CancellationToken cancellationToken)
     {
+        Interlocked.Increment(ref _activeRequests);
+        
         if (cancellationToken.IsCancellationRequested)
         {
             return;
@@ -242,7 +414,13 @@ public class CrawlerService(IOptions options) : ICrawlerService
         {
             var page = await this.Browser!.NewPageAsync();
             var watch = Stopwatch.StartNew();
-            var res = await page.GotoAsync(entry.Url.ToString())
+
+            var gotoOptions = new PageGotoOptions
+            {
+                Timeout = _options.RequestTimeout
+            };
+            
+            var res = await page.GotoAsync(entry.Url.ToString(), gotoOptions)
                       ?? throw new Exception($"Unable to get a valid HTTP response from {entry.Url}");
 
             watch.Stop();
@@ -286,8 +464,8 @@ public class CrawlerService(IOptions options) : ICrawlerService
         }
         catch (TimeoutException)
         {
-            responseType = "Request Timeout";
-            entry.Errors.Add(new RequestError($"Request timeout after {_options.RequestTimeout.TotalSeconds} second(s)."));
+            responseType = "ERR_TIMEOUT";
+            entry.Errors.Add(new RequestError($"Request timeout after {(int)(_options.RequestTimeout / 1000)} second(s)."));
         }
         catch (Exception ex)
         {
@@ -327,6 +505,8 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 _responseTypes.Add(responseType, 1);
             }
         }
+
+        Interlocked.Decrement(ref _activeRequests);
     }
 
     /// <summary>
@@ -369,175 +549,11 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
                 if (!alreadyAdded)
                 {
+                    // TODO: Add type of URL based on tag it came from. This will be used to determine if a Playwright request is to be made, or just a HTTP client request.
+                    
                     _queue.Add(new QueueEntry(uri));
                 }
             }
-        }
-    }
-
-    /// <summary>
-    /// Update/redraw the UI.
-    /// </summary>
-    /// <param name="redraw">Whether to redraw the whole UI.</param>
-    private void UpdateUi(bool redraw)
-    {
-        if (!redraw)
-        {
-            if (this.WindowHeight != Console.WindowHeight ||
-                this.WindowWidth != Console.WindowWidth)
-            {
-                this.WindowHeight = Console.WindowHeight;
-                this.WindowWidth = Console.WindowWidth;
-                
-                redraw = true;
-            }
-
-            lock (_responseTypes)
-            {
-                if (this.ResponseTypes != _responseTypes.Count)
-                {
-                    this.ResponseTypes = _responseTypes.Count;
-                    redraw = true;
-                }
-            }
-        }
-
-        if (redraw)
-        {
-            var lines = new List<string>
-            {
-                Program.NameAndVersion,
-                "Press CTRL+C to abort",
-                "",
-                "Started:  ",
-                "Duration: ",
-                "Progress: ",
-                "Requests: ",
-                "",
-                "          < 450 ms",
-                "          > 450 ms < 900 ms",
-                "          > 900 ms",
-                ""
-            };
-            
-            lock (_responseTypes)
-            {
-                lines.AddRange(_responseTypes.Select(n => $"          {n.Key}"));
-            }
-
-            Console.CursorVisible = false;
-            Console.ResetColor();
-            Console.Clear();
-
-            foreach (var line in lines)
-            {
-                Console.WriteLine(line);
-            }
-
-            Console.CursorLeft = 6;
-            Console.CursorTop = 1;
-            Console.ForegroundColor = ConsoleColor.Blue;
-            Console.Write("CTRL+C");
-            
-            Console.CursorLeft = 10;
-            Console.CursorTop = 3;
-            Console.ForegroundColor = ConsoleColor.DarkGreen;
-            Console.Write($"{_started:yyyy-MM-dd} {_started:HH:mm}");
-        }
-        
-        // Update duration.
-        var duration = DateTimeOffset.Now - _started;
-
-        Console.CursorLeft = 10;
-        Console.CursorTop = 4;
-        Console.ForegroundColor = ConsoleColor.DarkGreen;
-        Console.Write(this.GetFormattedTimeSpan(duration));
-
-        // Update progress.
-        var finished = _queue.Count(n => n.Finished.HasValue);
-        var percent = (int)(100.00 / _queue.Count * finished);
-        
-        Console.CursorLeft = 10;
-        Console.CursorTop = 5;
-        Console.ForegroundColor = ConsoleColor.DarkGreen;
-        Console.Write($"{finished} ({percent}%) of {_queue.Count}");
-
-        // Update requests per. second.
-        var requestsPerSecond = finished > 0
-            ? finished / duration.TotalSeconds
-            : 0;
-        
-        Console.CursorLeft = 10;
-        Console.CursorTop = 6;
-        Console.ForegroundColor = ConsoleColor.DarkGreen;
-        Console.Write($"~{(int)requestsPerSecond}/s");
-
-        // Update response times.
-        lock (_responseTimes)
-        {
-            foreach (var responseTimeRange in Enum.GetValues<ResponseTimeRange>())
-            {
-                var index = (int)responseTimeRange;
-                var value = _responseTimes[responseTimeRange];
-                var count = value.ToString();
-
-                count = new string(' ', 8 - count.Length) + count;
-            
-                Console.CursorLeft = 0;
-                Console.CursorTop = 8 + index;
-                Console.ForegroundColor = value > 0 ? ConsoleColor.DarkYellow : ConsoleColor.DarkGray;
-                Console.Write(count);
-            }
-        }
-
-        // Update response types.
-        var top = 11;
-
-        lock (_responseTypes)
-        {
-            foreach (var responseType in _responseTypes.OrderBy(n => n.Key))
-            {
-                var count = responseType.Value.ToString();
-            
-                count = new string(' ', 8 - count.Length) + count;
-            
-                Console.CursorLeft = 0;
-                Console.CursorTop = ++top;
-                Console.ForegroundColor = ConsoleColor.DarkCyan;
-                Console.Write(count);
-            }            
-        }
-    }
-
-    /// <summary>
-    /// Write queue to disk.
-    /// </summary>
-    private async Task WriteQueueToDisk()
-    {
-        var path = Path.Combine(
-            Directory.GetCurrentDirectory(),
-            $"queue-{_started:yyyy-MM-dd-HH-mm-ss}.json");
-
-        int top; 
-
-        lock (_responseTypes)
-        {
-            top = 13 + _responseTypes.Count;
-        }
-
-        Console.CursorLeft = 0;
-        Console.CursorTop = top;
-
-        try
-        {
-            Console.WriteLine($"Writing queue to {path}");
-            
-            await using var stream = File.Create(path);
-            await JsonSerializer.SerializeAsync(stream, _queue, _serializerOptions);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error: {ex.Message}");
         }
     }
 

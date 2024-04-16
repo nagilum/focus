@@ -17,7 +17,7 @@ public class Options : IOptions
     /// <summary>
     /// <inheritdoc cref="IOptions.RequestTimeout"/>
     /// </summary>
-    public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(10);
+    public float RequestTimeout { get; set; } = 10000;
 
     /// <summary>
     /// <inheritdoc cref="IOptions.Urls"/>

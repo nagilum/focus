@@ -43,10 +43,7 @@ internal static class Program
 
         Console.CancelKeyPress += (_, e) =>
         {
-            Console.CursorLeft = 6;
-            Console.CursorTop = 1;
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.Write("CTRL+C");
+            ConsoleEx.WriteAt(6, 1, ConsoleColor.Red, "CTRL+C");
             
             source.Cancel();
             e.Cancel = true;
@@ -61,7 +58,12 @@ internal static class Program
 
         await crawler.Run(source.Token);
         await crawler.DisposePlaywright();
+        
         await source.CancelAsync();
+
+        crawler.UpdateUi(false);
+        
+        await crawler.WriteQueueToDisk();
     }
 
     /// <summary>
@@ -89,7 +91,12 @@ internal static class Program
                 case "-e":
                     if (i == args.Count - 1)
                     {
-                        Console.WriteLine("Error: -e must be followed by the name of the rendering engine to use.");
+                        ConsoleEx.WriteError(
+                            ConsoleColor.Yellow,
+                            "-e ",
+                            0x00,
+                            "must be followed by the name of the rendering engine to use.");
+                        
                         return false;
                     }
 
@@ -108,7 +115,15 @@ internal static class Program
                             break;
                         
                         default:
-                            Console.WriteLine($"Error: Invalid value for -e: {args[i + 1]}");
+                            ConsoleEx.WriteError(
+                                "Invalid value for ",
+                                ConsoleColor.Yellow,
+                                "-e",
+                                0x00,
+                                ": ",
+                                ConsoleColor.DarkRed,
+                                args[i + 1]);
+                            
                             return false;
                     }
 
@@ -118,14 +133,27 @@ internal static class Program
                 case "-r":
                     if (i == args.Count - 1)
                     {
-                        Console.WriteLine("Error: -r must be followed by a number of attempts.");
+                        ConsoleEx.WriteError(
+                            ConsoleColor.Yellow,
+                            "-r ",
+                            0x00,
+                            "must be followed by a number of attempts.");
+                        
                         return false;
                     }
 
                     if (!int.TryParse(args[i + 1], out var attempts) ||
                         attempts < 1)
                     {
-                        Console.WriteLine($"Error: Invalid value for -r: {args[i + 1]}");
+                        ConsoleEx.WriteError(
+                            "Invalid value for ",
+                            ConsoleColor.Yellow,
+                            "-r",
+                            0x00,
+                            ": ",
+                            ConsoleColor.DarkRed,
+                            args[i + 1]);
+                        
                         return false;
                     }
 
@@ -136,25 +164,42 @@ internal static class Program
                 case "-t":
                     if (i == args.Count - 1)
                     {
-                        Console.WriteLine("Error: -t must be followed by a number of seconds.");
+                        ConsoleEx.WriteError(
+                            ConsoleColor.Yellow,
+                            "-t ",
+                            0x00,
+                            "must be followed by a number of seconds.");
+                        
                         return false;
                     }
 
                     if (!int.TryParse(args[i + 1], out var seconds) ||
                         seconds < 0)
                     {
-                        Console.WriteLine($"Error: Invalid value for -t: {args[i + 1]}");
+                        ConsoleEx.WriteError(
+                            "Invalid value for ",
+                            ConsoleColor.Yellow,
+                            "-t",
+                            0x00,
+                            ": ",
+                            ConsoleColor.DarkRed,
+                            args[i + 1]);
+                        
                         return false;
                     }
 
-                    options.RequestTimeout = TimeSpan.FromSeconds(seconds);
+                    options.RequestTimeout = seconds * 1000;
                     skip = true;
                     break;
 
                 default:
                     if (!Uri.TryCreate(args[i], UriKind.Absolute, out var uri))
                     {
-                        Console.WriteLine($"Error: Invalid URL: {args[i]}");
+                        ConsoleEx.WriteError(
+                            "Invalid URL: ",
+                            ConsoleColor.DarkRed,
+                            args[i]);
+                        
                         return false;
                     }
 
@@ -167,7 +212,13 @@ internal static class Program
             }
         }
 
-        return true;
+        if (options.Urls.Count > 0)
+        {
+            return true;
+        }
+
+        ConsoleEx.WriteError("You must add at least one URL to scan.");
+        return false;
     }
 
     /// <summary>
@@ -175,27 +226,81 @@ internal static class Program
     /// </summary>
     private static void ShowProgramUsage()
     {
-        string[] lines =
-        [
+        ConsoleEx.Write(
+            ConsoleColor.White,
             NameAndVersion,
-            "Crawl a site and test responses.",
-            "",
-            "Usage:",
-            "  focus <url> [<options>]",
-            "",
+            Environment.NewLine,
+            0x00,
+            
+            "Crawl a site and log all responses.", Environment.NewLine,
+            Environment.NewLine,
+            
+            "Usage:", Environment.NewLine,
+            ConsoleColor.Yellow,
+            "  focus ",
+            ConsoleColor.White,
+            "<url> ",
+            0x00,
+            "[<options>]",
+            Environment.NewLine,
+            Environment.NewLine,
             "Options:",
-            "  -e <name>       Set which rendering engine. Options are chromium, firefox, and webkit. Defaults to chromium.",
-            "  -r <attempts>   Retries all failed (non 2xx) requests n times. Defaults to 0.",
-            "  -t <seconds>    Set request timeout, in seconds. Defaults to 10.",
-            "",
-            "The URL parameter is repeatable.",
-            "",
-            "Source and documentation available at https://github.com/nagilum/focus"
-        ];
-
-        foreach (var line in lines)
-        {
-            Console.WriteLine(line);
-        }
+            Environment.NewLine);
+        
+        ConsoleEx.Write(
+            ConsoleColor.Yellow,
+            "  -e ",
+            ConsoleColor.White,
+            "<name>       ",
+            0x00,
+            "Set rendering engine. Options are ",
+            ConsoleColor.Yellow,
+            "chromium",
+            0x00,
+            ", ",
+            ConsoleColor.Yellow,
+            "firefox",
+            0x00,
+            ", and ",
+            ConsoleColor.Yellow,
+            "webkit",
+            0x00,
+            ". Defaults to ",
+            ConsoleColor.Yellow,
+            "chromium",
+            0x00,
+            ".",
+            Environment.NewLine);
+        
+        ConsoleEx.Write(
+            ConsoleColor.Yellow,
+            "  -r ",
+            ConsoleColor.White,
+            "<attempts>   ",
+            0x00,
+            "Retries all failed (non 2xx) requests n times. Defaults to ",
+            ConsoleColor.Yellow,
+            "0",
+            0x00,
+            ".",
+            Environment.NewLine);
+        
+        ConsoleEx.Write(
+            ConsoleColor.Yellow,
+            "  -t ",
+            ConsoleColor.White,
+            "<seconds>    ",
+            0x00,
+            "Set request timeout, in seconds. Defaults to ",
+            ConsoleColor.Yellow,
+            "10",
+            0x00,
+            ".",
+            Environment.NewLine,
+            Environment.NewLine);
+        
+        ConsoleEx.Write(
+            "The URL parameter is repeatable.", Environment.NewLine,
+            "Source and documentation available at https://github.com/nagilum/focus", Environment.NewLine);
     }
 }
