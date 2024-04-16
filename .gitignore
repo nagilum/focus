@@ -1,0 +1,7 @@
+.idea/
+
+Focus/bin/
+Focus/obj/
+
+*.user
+*.log
