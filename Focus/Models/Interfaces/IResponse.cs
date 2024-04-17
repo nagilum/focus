@@ -8,11 +8,6 @@ public interface IResponse
     string? ContentType { get; }
     
     /// <summary>
-    /// When the response was added.
-    /// </summary>
-    DateTimeOffset Created { get; }
-    
-    /// <summary>
     /// HTTP status code.
     /// </summary>
     int StatusCode { get; }

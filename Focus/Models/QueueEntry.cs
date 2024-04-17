@@ -17,7 +17,7 @@ public class QueueEntry(Uri uri, bool playwrightRequest) : IQueueEntry
     /// <summary>
     /// <inheritdoc cref="IQueueEntry.PlaywrightRequest"/>
     /// </summary>
-    public bool PlaywrightRequest { get; set; } = playwrightRequest;
+    public bool PlaywrightRequest { get; } = playwrightRequest;
 
     /// <summary>
     /// <inheritdoc cref="IQueueEntry.Errors"/>

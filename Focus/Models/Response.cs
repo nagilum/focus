@@ -7,12 +7,7 @@ public class Response : IResponse
     /// <summary>
     /// <inheritdoc cref="IResponse.ContentType"/>
     /// </summary>
-    public string? ContentType { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="IResponse.Created"/>
-    /// </summary>
-    public DateTimeOffset Created { get; } = DateTimeOffset.Now;
+    public string? ContentType { get; init; }
 
     /// <summary>
     /// <inheritdoc cref="IResponse.StatusCode"/>
