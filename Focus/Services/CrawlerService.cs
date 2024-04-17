@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using Focus.Models;
 using Focus.Models.Interfaces;
@@ -460,7 +461,15 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
             if (entry.PlaywrightRequest)
             {
-                var page = await this.Browser!.NewPageAsync();
+                var newPageOptions = new BrowserNewPageOptions
+                {
+                    ExtraHTTPHeaders = new Dictionary<string, string>
+                    {
+                        { "Accept-Language", "en" }
+                    }
+                };
+                
+                var page = await this.Browser!.NewPageAsync(newPageOptions);
                 var gotoOptions = new PageGotoOptions
                 {
                     Timeout = _options.RequestTimeout,
@@ -491,6 +500,10 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 client.Timeout = _options.RequestTimeout > 0
                     ? TimeSpan.FromMilliseconds(_options.RequestTimeout)
                     : Timeout.InfiniteTimeSpan;
+
+                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
+                client.DefaultRequestHeaders.AcceptLanguage.Add(new StringWithQualityHeaderValue("en"));
+                client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue(Program.Name, Program.Version));
 
                 watch = Stopwatch.StartNew();
 

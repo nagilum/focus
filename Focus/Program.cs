@@ -9,7 +9,17 @@ internal static class Program
     /// <summary>
     /// Program name and version.
     /// </summary>
-    public static string NameAndVersion => "Focus v0.2-beta";
+    public static string NameAndVersion => $"{Name} v{Version}";
+    
+    /// <summary>
+    /// Program name.
+    /// </summary>
+    public const string Name = "Focus";
+
+    /// <summary>
+    /// Program version.
+    /// </summary>
+    public const string Version = "0.2-beta";
 
     /// <summary>
     /// Init all the things..
