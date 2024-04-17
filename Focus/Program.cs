@@ -61,7 +61,7 @@ internal static class Program
         
         await source.CancelAsync();
 
-        crawler.UpdateUi(false);
+        crawler.UpdateUi(true);
         
         await crawler.WriteQueueToDisk();
     }
