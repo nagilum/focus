@@ -492,6 +492,8 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 {
                     await this.ParseResponseContent(entry, page);
                 }
+                
+                await page.CloseAsync();
             }
             else
             {
