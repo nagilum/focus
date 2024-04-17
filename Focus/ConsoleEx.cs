@@ -36,26 +36,6 @@ public static class ConsoleEx
             Console.ResetColor();
         }
     }
-
-    /// <summary>
-    /// Write objects to console as error.
-    /// </summary>
-    /// <param name="objects"></param>
-    public static void WriteError(params object[] objects)
-    {
-        var list = new List<object>
-        {
-            ConsoleColor.Red,
-            "Error",
-            0x00,
-            ": "
-        };
-
-        list.AddRange(objects);
-        list.Add(Environment.NewLine);
-
-        Write(list.ToArray());
-    }
     
     /// <summary>
     /// Write objects to console.
@@ -90,5 +70,39 @@ public static class ConsoleEx
             
             Console.ResetColor();
         }
+    }
+    
+    /// <summary>
+    /// Write objects to console as error.
+    /// </summary>
+    /// <param name="objects">Objects to write.</param>
+    public static void WriteError(params object[] objects)
+    {
+        var list = new List<object>
+        {
+            ConsoleColor.Red,
+            "Error",
+            0x00,
+            ": "
+        };
+
+        list.AddRange(objects);
+        list.Add(Environment.NewLine);
+
+        Write(list.ToArray());
+    }
+
+    /// <summary>
+    /// Write objects to console and add a newline.
+    /// </summary>
+    /// <param name="objects">Objects to write.</param>
+    public static void WriteLine(params object[] objects)
+    {
+        var list = new List<object>();
+
+        list.AddRange(objects);
+        list.Add(Environment.NewLine);
+        
+        Write(list.ToArray());
     }
 }

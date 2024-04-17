@@ -9,17 +9,7 @@ internal static class Program
     /// <summary>
     /// Program name and version.
     /// </summary>
-    public static string NameAndVersion => $"{Name} v{Version}";
-
-    /// <summary>
-    /// Program name.
-    /// </summary>
-    public const string Name = "Focus";
-
-    /// <summary>
-    /// Program version.
-    /// </summary>
-    public const string Version = "0.1-alpha";
+    public static string NameAndVersion => "Focus v0.2-beta";
 
     /// <summary>
     /// Init all the things..
@@ -226,28 +216,23 @@ internal static class Program
     /// </summary>
     private static void ShowProgramUsage()
     {
-        ConsoleEx.Write(
-            ConsoleColor.White,
-            NameAndVersion,
-            Environment.NewLine,
-            0x00,
-            
-            "Crawl a site and log all responses.", Environment.NewLine,
-            Environment.NewLine,
-            
-            "Usage:", Environment.NewLine,
+        ConsoleEx.WriteLine(ConsoleColor.White, NameAndVersion);
+        ConsoleEx.WriteLine("Crawl a site and log all responses.");
+        ConsoleEx.WriteLine();
+        ConsoleEx.WriteLine("Usage:");
+        
+        ConsoleEx.WriteLine(
             ConsoleColor.Yellow,
             "  focus ",
             ConsoleColor.White,
             "<url> ",
             0x00,
-            "[<options>]",
-            Environment.NewLine,
-            Environment.NewLine,
-            "Options:",
-            Environment.NewLine);
+            "[<options>]");
         
-        ConsoleEx.Write(
+        ConsoleEx.WriteLine();
+        ConsoleEx.WriteLine("Options:");
+        
+        ConsoleEx.WriteLine(
             ConsoleColor.Yellow,
             "  -e ",
             ConsoleColor.White,
@@ -269,10 +254,9 @@ internal static class Program
             ConsoleColor.Yellow,
             "chromium",
             0x00,
-            ".",
-            Environment.NewLine);
+            ".");
         
-        ConsoleEx.Write(
+        ConsoleEx.WriteLine(
             ConsoleColor.Yellow,
             "  -r ",
             ConsoleColor.White,
@@ -282,10 +266,9 @@ internal static class Program
             ConsoleColor.Yellow,
             "0",
             0x00,
-            ".",
-            Environment.NewLine);
+            ".");
         
-        ConsoleEx.Write(
+        ConsoleEx.WriteLine(
             ConsoleColor.Yellow,
             "  -t ",
             ConsoleColor.White,
@@ -295,12 +278,10 @@ internal static class Program
             ConsoleColor.Yellow,
             "10",
             0x00,
-            ".",
-            Environment.NewLine,
-            Environment.NewLine);
+            ".");
         
-        ConsoleEx.Write(
-            "The URL parameter is repeatable.", Environment.NewLine,
-            "Source and documentation available at https://github.com/nagilum/focus", Environment.NewLine);
+        ConsoleEx.WriteLine();
+        ConsoleEx.WriteLine("The URL parameter is repeatable.");
+        ConsoleEx.WriteLine("Source and documentation available at https://github.com/nagilum/focus");
     }
 }
