@@ -1,6 +1,5 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Text;
 using System.Text.Json;
 using Focus.Models;
 using Focus.Models.Interfaces;
@@ -16,7 +15,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
     /// Number of active requests.
     /// </summary>
     private int _activeRequests;
-    
+
     /// <summary>
     /// Parsed options.
     /// </summary>
@@ -41,7 +40,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
     /// Response types.
     /// </summary>
     private readonly Dictionary<string, int> _responseTypes = new();
-    
+
     /// <summary>
     /// JSON serializer options.
     /// </summary>
@@ -50,21 +49,21 @@ public class CrawlerService(IOptions options) : ICrawlerService
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true
     };
-    
+
     /// <summary>
     /// When the crawl started.
     /// </summary>
     private readonly DateTimeOffset _started = DateTimeOffset.Now;
-    
+
     #endregion
-    
+
     #region Properties
-    
+
     /// <summary>
     /// Playwright browser.
     /// </summary>
     private IBrowser? Browser { get; set; }
-    
+
     /// <summary>
     /// Response types on last loop.
     /// </summary>
@@ -79,9 +78,9 @@ public class CrawlerService(IOptions options) : ICrawlerService
     /// Window width.
     /// </summary>
     private int WindowWidth { get; set; } = Console.WindowWidth;
-    
+
     #endregion
-    
+
     #region ICrawlerService implementations
 
     /// <summary>
@@ -94,7 +93,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
             await this.Browser.CloseAsync();
         }
     }
-    
+
     /// <summary>
     /// <inheritdoc cref="ICrawlerService.Run"/>
     /// </summary>
@@ -142,7 +141,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
         {
             await Task.Delay(100, cancellationToken);
         }
-        
+
         Console.ResetColor();
         return;
 
@@ -169,19 +168,55 @@ public class CrawlerService(IOptions options) : ICrawlerService
     /// </summary>
     public async Task<bool> SetupPlaywright()
     {
+        var install = false;
+        
         try
         {
-            ConsoleEx.Write("Setting up Playwright..");
+            // If this fails, Playwright is most likely not installed.
+            var playwright = await Playwright.CreateAsync();
+            _ = await playwright.Chromium.LaunchAsync();
+        }
+        catch
+        {
+            ConsoleEx.Write(
+                "Playwright is not installed, but is required for this app.",
+                Environment.NewLine,
+                "Do you wish to install it? Press ",
+                ConsoleColor.Green,
+                "Y ",
+                0x00,
+                "for yes. Any other key will cancel.",
+                Environment.NewLine);
+
+            var key = Console.ReadKey(true);
+
+            if (key.KeyChar is 'y' or 'Y')
+            {
+                install = true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        try
+        {
+            if (install)
+            {
+                ConsoleEx.WriteLine("Installing Playwright..");
+                Microsoft.Playwright.Program.Main(["install"]);
+            }
             
-            Microsoft.Playwright.Program.Main(["install"]);
-            
-            var instance = await Playwright.CreateAsync();
+            ConsoleEx.WriteLine("Setting up Playwright..");
+
+            var playwright = await Playwright.CreateAsync();
 
             this.Browser = _options.RenderingEngine switch
             {
-                RenderingEngine.Chromium => await instance.Chromium.LaunchAsync(),
-                RenderingEngine.Firefox => await instance.Firefox.LaunchAsync(),
-                RenderingEngine.Webkit => await instance.Webkit.LaunchAsync(),
+                RenderingEngine.Chromium => await playwright.Chromium.LaunchAsync(),
+                RenderingEngine.Firefox => await playwright.Firefox.LaunchAsync(),
+                RenderingEngine.Webkit => await playwright.Webkit.LaunchAsync(),
                 _ => throw new Exception($"Invalid rendering engine: {_options.RenderingEngine}")
             };
 
@@ -193,7 +228,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
             return false;
         }
     }
-    
+
     /// <summary>
     /// Update/redraw the UI.
     /// </summary>
@@ -207,7 +242,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
             {
                 this.WindowHeight = Console.WindowHeight;
                 this.WindowWidth = Console.WindowWidth;
-                
+
                 redraw = true;
             }
 
@@ -228,27 +263,27 @@ public class CrawlerService(IOptions options) : ICrawlerService
             Console.CursorVisible = false;
             Console.ResetColor();
             Console.Clear();
-            
-            ConsoleEx.WriteAt(0, 0, 
-                ConsoleColor.White, 
+
+            ConsoleEx.WriteAt(0, 0,
+                ConsoleColor.White,
                 Program.NameAndVersion);
-            
+
             ConsoleEx.WriteAt(0, 1, ConsoleColor.Gray,
                 "Press ",
                 ConsoleColor.Blue,
                 "CTRL+C ",
                 ConsoleColor.Gray,
                 "to abort");
-            
+
             ConsoleEx.WriteAt(0, 3, ConsoleColor.Gray, "Started");
             ConsoleEx.WriteAt(0, 4, ConsoleColor.Gray, "Duration");
             ConsoleEx.WriteAt(0, 5, ConsoleColor.Gray, "Progress");
             ConsoleEx.WriteAt(0, 6, ConsoleColor.Gray, "Requests");
-            
+
             ConsoleEx.WriteAt(10, 8, ConsoleColor.Gray, "< 450 ms");
             ConsoleEx.WriteAt(10, 9, ConsoleColor.Gray, "> 450 ms < 900 ms");
             ConsoleEx.WriteAt(10, 10, ConsoleColor.Gray, "> 900 ms");
-            
+
             lock (_responseTypes)
             {
                 top = 11;
@@ -258,17 +293,17 @@ public class CrawlerService(IOptions options) : ICrawlerService
                     ConsoleEx.WriteAt(10, ++top, ConsoleColor.Gray, type.Key);
                 }
             }
-            
-            ConsoleEx.WriteAt(10, 3, 
-                ConsoleColor.DarkGreen, 
+
+            ConsoleEx.WriteAt(10, 3,
+                ConsoleColor.DarkGreen,
                 $"{_started:yyyy-MM-dd} {_started:HH:mm}");
         }
-        
+
         // Update duration.
         var duration = DateTimeOffset.Now - _started;
 
-        ConsoleEx.WriteAt(10, 4, 
-            ConsoleColor.DarkGreen, 
+        ConsoleEx.WriteAt(10, 4,
+            ConsoleColor.DarkGreen,
             this.GetFormattedTimeSpan(duration));
 
         // Update progress.
@@ -276,18 +311,18 @@ public class CrawlerService(IOptions options) : ICrawlerService
         var percent = finished < _queue.Count
             ? (int)(100.00 / _queue.Count * finished)
             : 100;
-        
-        ConsoleEx.WriteAt(10, 5, 
-            ConsoleColor.DarkGreen, 
+
+        ConsoleEx.WriteAt(10, 5,
+            ConsoleColor.DarkGreen,
             $"{finished} ({percent}%) of {_queue.Count}");
 
         // Update requests per. second.
         var requestsPerSecond = finished > 0
             ? finished / duration.TotalSeconds
             : 0;
-        
-        ConsoleEx.WriteAt(10, 6, 
-            ConsoleColor.DarkGreen, 
+
+        ConsoleEx.WriteAt(10, 6,
+            ConsoleColor.DarkGreen,
             $"~{(int)requestsPerSecond}/s        ");
 
         // Update response times.
@@ -300,9 +335,9 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 var count = value.ToString();
 
                 count = new string(' ', 8 - count.Length) + count;
-                
-                ConsoleEx.WriteAt(0, 8 + index, 
-                    value > 0 ? ConsoleColor.DarkYellow : ConsoleColor.DarkGray, 
+
+                ConsoleEx.WriteAt(0, 8 + index,
+                    value > 0 ? ConsoleColor.DarkYellow : ConsoleColor.DarkGray,
                     count);
             }
         }
@@ -315,13 +350,13 @@ public class CrawlerService(IOptions options) : ICrawlerService
             foreach (var responseType in _responseTypes.OrderBy(n => n.Key))
             {
                 var count = responseType.Value.ToString();
-            
+
                 count = new string(' ', 8 - count.Length) + count;
-                
-                ConsoleEx.WriteAt(0, ++top, 
-                    ConsoleColor.DarkCyan, 
+
+                ConsoleEx.WriteAt(0, ++top,
+                    ConsoleColor.DarkCyan,
                     count);
-            }            
+            }
         }
     }
 
@@ -334,7 +369,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
             Directory.GetCurrentDirectory(),
             $"queue-{_started:yyyy-MM-dd-HH-mm-ss}.json");
 
-        int top; 
+        int top;
 
         lock (_responseTypes)
         {
@@ -349,7 +384,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 path,
                 Environment.NewLine,
                 Environment.NewLine);
-            
+
             await using var stream = File.Create(path);
             await JsonSerializer.SerializeAsync(
                 stream,
@@ -365,7 +400,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
     #endregion
 
     #region Helper functions
-    
+
     /// <summary>
     /// Get a more human-readable format of a TimeSpan value.
     /// </summary>
@@ -398,7 +433,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
         return output;
     }
-    
+
     /// <summary>
     /// Crawl the given queue entry and update tracking data.
     /// </summary>
@@ -407,22 +442,22 @@ public class CrawlerService(IOptions options) : ICrawlerService
     private async Task HandleQueueEntry(QueueEntry entry, CancellationToken cancellationToken)
     {
         Interlocked.Increment(ref _activeRequests);
-        
+
         if (cancellationToken.IsCancellationRequested)
         {
             return;
         }
-        
+
         entry.Attempts++;
 
         string responseType;
-        
+
         try
         {
             string? contentType;
             int statusCode;
             Stopwatch watch;
-            
+
             if (entry.PlaywrightRequest)
             {
                 var page = await this.Browser!.NewPageAsync();
@@ -433,15 +468,15 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 };
 
                 watch = Stopwatch.StartNew();
-                
+
                 var res = await page.GotoAsync(entry.Url.ToString(), gotoOptions)
                           ?? throw new Exception($"Unable to get a valid HTTP response from {entry.Url}");
-                
+
                 watch.Stop();
 
                 statusCode = res.Status;
                 contentType = await res.HeaderValueAsync("content-type");
-                
+
                 var isHtml = contentType?.Contains("text/html", StringComparison.InvariantCultureIgnoreCase);
 
                 if (isHtml is true)
@@ -452,13 +487,13 @@ public class CrawlerService(IOptions options) : ICrawlerService
             else
             {
                 using var client = new HttpClient();
-                
+
                 client.Timeout = TimeSpan.FromMilliseconds(_options.RequestTimeout);
 
                 watch = Stopwatch.StartNew();
 
                 var res = await client.GetAsync(entry.Url, cancellationToken);
-                
+
                 watch.Stop();
 
                 contentType = res.Content.Headers.ContentType?.MediaType;
@@ -471,7 +506,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
             {
                 entry.Finished = DateTimeOffset.Now;
             }
-            
+
             entry.Responses.Add(
                 new()
                 {
@@ -480,7 +515,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
                     StatusDescription = statusDescription,
                     Time = watch.ElapsedMilliseconds
                 });
-            
+
             var responseTimeRange = watch.ElapsedMilliseconds switch
             {
                 < 450 => ResponseTimeRange.LessThan450Ms,
@@ -498,7 +533,8 @@ public class CrawlerService(IOptions options) : ICrawlerService
         catch (TimeoutException)
         {
             responseType = "ERR_TIMEOUT";
-            entry.Errors.Add(new RequestError($"Request timeout after {(int)(_options.RequestTimeout / 1000)} second(s)."));
+            entry.Errors.Add(
+                new RequestError($"Request timeout after {(int)(_options.RequestTimeout / 1000)} second(s)."));
         }
         catch (Exception ex)
         {
@@ -517,7 +553,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
             {
                 responseType = ex.Message;
             }
-            
+
             entry.Errors.Add(new RequestError(ex.Message));
         }
 
@@ -575,9 +611,9 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 {
                     continue;
                 }
-                
+
                 url = uri.ToString();
-                
+
                 var alreadyAdded = _queue.Any(n => n.Url.ToString() == url);
 
                 if (!alreadyAdded)
