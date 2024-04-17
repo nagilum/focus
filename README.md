@@ -15,9 +15,7 @@ dotnet build -c Release
 focus https://example.com
 ```
 
-<div style="padding: 20px 0; text-align: center;">
-    <img src="screenshot.png?raw=true" alt="Focus Screenshot">
-</div>
+<p align="center"><img src="screenshot.png?raw=true" alt="Focus Screenshot"></p>
 
 ## Parameters
 
