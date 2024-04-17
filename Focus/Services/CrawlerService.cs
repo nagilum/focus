@@ -488,7 +488,9 @@ public class CrawlerService(IOptions options) : ICrawlerService
             {
                 using var client = new HttpClient();
 
-                client.Timeout = TimeSpan.FromMilliseconds(_options.RequestTimeout);
+                client.Timeout = _options.RequestTimeout > 0
+                    ? TimeSpan.FromMilliseconds(_options.RequestTimeout)
+                    : Timeout.InfiniteTimeSpan;
 
                 watch = Stopwatch.StartNew();
 

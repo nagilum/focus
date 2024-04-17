@@ -164,7 +164,7 @@ internal static class Program
                     }
 
                     if (!int.TryParse(args[i + 1], out var seconds) ||
-                        seconds < 0)
+                        seconds < -1)
                     {
                         ConsoleEx.WriteError(
                             "Invalid value for ",
@@ -178,7 +178,7 @@ internal static class Program
                         return false;
                     }
 
-                    options.RequestTimeout = seconds * 1000;
+                    options.RequestTimeout = seconds > 0 ? seconds * 1000 : 0;
                     skip = true;
                     break;
 
@@ -274,7 +274,11 @@ internal static class Program
             ConsoleColor.White,
             "<seconds>    ",
             0x00,
-            "Set request timeout, in seconds. Defaults to ",
+            "Set request timeout, in seconds. Set to ",
+            ConsoleColor.Yellow,
+            "0",
+            0x00,
+            " to disable. Defaults to ",
             ConsoleColor.Yellow,
             "10",
             0x00,
