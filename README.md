@@ -15,6 +15,8 @@ dotnet build -c Release
 focus https://example.com
 ```
 
+![CLI Example](screenshot.png?raw=true)
+
 ## Parameters
 
 ### Set Rendering Engine
