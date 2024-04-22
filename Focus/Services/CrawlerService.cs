@@ -324,7 +324,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
         ConsoleEx.WriteAt(10, 6,
             ConsoleColor.DarkGreen,
-            $"~{requestsPerSecond:0.00}/s        ");
+            $"{requestsPerSecond:0.00}/s        ");
 
         // Update response times.
         lock (_responseTimes)
