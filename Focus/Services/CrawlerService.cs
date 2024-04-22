@@ -492,6 +492,20 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 {
                     await this.ParseResponseContent(entry, page);
                 }
+
+                var redirectUrl = await res.HeaderValueAsync("location");
+
+                if (redirectUrl is not null &&
+                    Uri.TryCreate(redirectUrl, UriKind.Absolute, out var redirectUri) &&
+                    entry.Url.IsBaseOf(redirectUri))
+                {
+                    var alreadyAdded = _queue.Any(n => n.Url.ToString() == redirectUrl);
+                    
+                    if (!alreadyAdded)
+                    {
+                        _queue.Add(new QueueEntry(redirectUri, true));
+                    }
+                }
                 
                 await page.CloseAsync();
             }
@@ -515,6 +529,18 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
                 contentType = res.Content.Headers.ContentType?.MediaType;
                 statusCode = (int)res.StatusCode;
+                
+                if (res.Headers.Location is not null &&
+                    entry.Url.IsBaseOf(res.Headers.Location))
+                {
+                    var url = res.Headers.Location.ToString();
+                    var alreadyAdded = _queue.Any(n => n.Url.ToString() == url);
+                    
+                    if (!alreadyAdded)
+                    {
+                        _queue.Add(new QueueEntry(res.Headers.Location, true));
+                    }
+                }
             }
 
             var statusDescription = Tools.GetStatusDescription(statusCode);
