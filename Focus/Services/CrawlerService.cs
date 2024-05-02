@@ -457,7 +457,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
             var res = await client.GetAsync(entry.Url, cancellationToken);
 
             watch.Stop();
-            
+
             // Add response data.
             var contentType = res.Content.Headers.ContentType?.MediaType;
             var statusCode = (int)res.StatusCode;
@@ -476,7 +476,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
             {
                 if (!response.Headers.ContainsKey(key))
                 {
-                    response.Headers.Add(key, string.Join(";", value));    
+                    response.Headers.Add(key, string.Join(";", value));
                 }
             }
 
@@ -484,12 +484,12 @@ public class CrawlerService(IOptions options) : ICrawlerService
             {
                 if (!response.Headers.ContainsKey(key))
                 {
-                    response.Headers.Add(key, string.Join(";", value));    
+                    response.Headers.Add(key, string.Join(";", value));
                 }
             }
-            
+
             entry.Responses.Add(response);
-            
+
             // Increment response time range.
             var responseTimeRange = watch.ElapsedMilliseconds switch
             {
@@ -502,7 +502,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
             {
                 _responseTimes[responseTimeRange]++;
             }
-            
+
             // Add redirect URL to queue.
             if (res.Headers.Location is not null &&
                 entry.Url.IsBaseOf(res.Headers.Location))
@@ -515,10 +515,10 @@ public class CrawlerService(IOptions options) : ICrawlerService
                     _queue.Add(new QueueEntry(res.Headers.Location));
                 }
             }
-            
+
             // Set response type.
             responseType = $"{statusCode} {statusDescription}";
-            
+
             // Parse HTML for new links.
             var isHtml = contentType?.Contains("text/html", StringComparison.InvariantCultureIgnoreCase);
 
@@ -534,11 +534,21 @@ public class CrawlerService(IOptions options) : ICrawlerService
         catch (TimeoutException)
         {
             responseType = "TIMEOUT";
-            
+
             entry.Errors.Add(
                 new(
                     typeof(TimeoutException).ToString(),
                     $"Request timeout after {(int)(_options.RequestTimeout / 1000)} second(s)."));
+        }
+        catch (HttpRequestException ex)
+        {
+            responseType = ex.Message.Contains(
+                "SSL connection could not be established",
+                StringComparison.InvariantCultureIgnoreCase)
+                ? "SSL-ERROR"
+                : ex.GetType().Name.ToUpper();
+
+            entry.Errors.Add(new(ex));
         }
         catch (Exception ex)
         {
