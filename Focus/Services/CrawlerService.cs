@@ -1,10 +1,12 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Focus.Models;
 using Focus.Models.Interfaces;
+using HtmlAgilityPack;
 using Microsoft.Playwright;
 
 namespace Focus.Services;
@@ -457,12 +459,13 @@ public class CrawlerService(IOptions options) : ICrawlerService
             watch.Stop();
             
             // Add response data.
+            var contentType = res.Content.Headers.ContentType?.MediaType;
             var statusCode = (int)res.StatusCode;
             var statusDescription = Tools.GetStatusDescription(statusCode);
 
             var response = new Response
             {
-                ContentType = res.Content.Headers.ContentType?.MediaType,
+                ContentType = contentType,
                 RequestType = RequestType.HttpClient,
                 StatusCode = statusCode,
                 StatusDescription = statusDescription,
@@ -515,6 +518,14 @@ public class CrawlerService(IOptions options) : ICrawlerService
             
             // Set response type.
             responseType = $"{statusCode} {statusDescription}";
+            
+            // Parse HTML for new links.
+            var isHtml = contentType?.Contains("text/html", StringComparison.InvariantCultureIgnoreCase);
+
+            if (isHtml is true)
+            {
+                await this.ParseResponseContent(entry, res, cancellationToken);
+            }
         }
         catch (TaskCanceledException)
         {
@@ -729,6 +740,70 @@ public class CrawlerService(IOptions options) : ICrawlerService
         output += "              ";
 
         return output;
+    }
+
+    /// <summary>
+    /// Extract new URLs to crawl.
+    /// </summary>
+    /// <param name="entry">Queue entry.</param>
+    /// <param name="res">HTTP response message.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    private async Task ParseResponseContent(
+        IQueueEntry entry, 
+        HttpResponseMessage res, 
+        CancellationToken cancellationToken)
+    {
+        HtmlDocument doc;
+
+        try
+        {
+            var bytes = await res.Content.ReadAsByteArrayAsync(cancellationToken);
+            var html = Encoding.UTF8.GetString(bytes);
+
+            doc = new HtmlDocument();
+            doc.LoadHtml(html);
+        }
+        catch
+        {
+            return;
+        }
+        
+        var selectors = new Dictionary<string, string>
+        {
+            { "a", "href" },
+            { "img", "src" },
+            { "link", "href" },
+            { "script", "src" }
+        };
+
+        foreach (var (tag, attr) in selectors)
+        {
+            var nodes = doc.DocumentNode.SelectNodes($"//{tag}[@{attr}]");
+
+            foreach (var node in nodes)
+            {
+                var url = node.GetAttributeValue(attr, null);
+                
+                if (url?.StartsWith('#') is true ||
+                    url?.StartsWith('?') is true ||
+                    !Uri.TryCreate(entry.Url, url, out var uri) ||
+                    !uri.IsAbsoluteUri ||
+                    !entry.Url.IsBaseOf(uri) ||
+                    string.IsNullOrWhiteSpace(uri.DnsSafeHost))
+                {
+                    continue;
+                }
+
+                url = uri.ToString();
+
+                var alreadyAdded = _queue.Any(n => n.Url.ToString() == url);
+
+                if (!alreadyAdded)
+                {
+                    _queue.Add(new QueueEntry(uri));
+                }
+            }
+        }
     }
 
     /// <summary>
