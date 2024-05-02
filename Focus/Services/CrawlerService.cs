@@ -284,7 +284,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
             {
                 top = 12;
 
-                foreach (var type in _responseTypes)
+                foreach (var type in _responseTypes.OrderBy(n => n.Key))
                 {
                     ConsoleEx.WriteAt(10, ++top, ConsoleColor.Gray, type.Key);
                 }
@@ -555,6 +555,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
             else
             {
                 _responseTypes.Add(responseType, 1);
+                this.ResponseTypes = _responseTypes.Count;
             }
         }
     }
@@ -701,6 +702,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
             else
             {
                 _responseTypes.Add(responseType, 1);
+                this.ResponseTypes = _responseTypes.Count;
             }
         }
     }
