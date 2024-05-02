@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using Focus.Models;
+using Focus.Models.Interfaces;
 using Focus.Services;
 
 namespace Focus;
@@ -39,6 +40,8 @@ internal static class Program
             return;
         }
 
+        AddExtraUrlsToScan(options);
+
         var source = new CancellationTokenSource();
 
         Console.CancelKeyPress += (_, e) =>
@@ -64,6 +67,42 @@ internal static class Program
         crawler.UpdateUi(true);
         
         await crawler.WriteQueueToDisk();
+    }
+
+    /// <summary>
+    /// Add extra URLs to scan that might not get picked up normally.
+    /// </summary>
+    /// <param name="options">Parsed options.</param>
+    private static void AddExtraUrlsToScan(IOptions options)
+    {
+        var paths = new[]
+        {
+            "favicon.ico",
+            "favicon.png",
+            "humans.txt",
+            "robots.txt",
+            "sitemap.xml",
+            "sitemap_index.xml"
+        };
+
+        var entry = options.Urls.First();
+
+        foreach (var path in paths)
+        {
+            var url = $"{entry.Scheme}://{entry.DnsSafeHost}/{path}";
+            
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                continue;
+            }
+            
+            var alreadyAdded = options.Urls.Any(n => n.ToString() == url);
+
+            if (!alreadyAdded)
+            {
+                options.Urls.Add(uri);
+            }
+        }
     }
 
     /// <summary>
@@ -172,6 +211,13 @@ internal static class Program
                         return false;
                     }
 
+                    if (options.Urls.Count > 0 &&
+                        options.Urls[0].DnsSafeHost != uri.DnsSafeHost)
+                    {
+                        ConsoleEx.WriteError("All URLs must be from the same domain.");
+                        return false;
+                    }
+
                     if (!options.Urls.Contains(uri))
                     {
                         options.Urls.Add(uri);
@@ -196,7 +242,7 @@ internal static class Program
     private static void ShowProgramUsage()
     {
         ConsoleEx.WriteLine(ConsoleColor.White, NameAndVersion);
-        ConsoleEx.WriteLine("Crawl and poke a site and see what happens.");
+        ConsoleEx.WriteLine("Crawl and poke a site to see what happens.");
         ConsoleEx.WriteLine();
         ConsoleEx.WriteLine("Usage:");
         
