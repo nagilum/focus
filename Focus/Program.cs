@@ -22,7 +22,7 @@ internal static class Program
     public const string Version = "0.2-beta";
 
     /// <summary>
-    /// Init all the things..
+    /// Init all the things...
     /// </summary>
     /// <param name="args">Command line arguments.</param>
     private static async Task Main(string[] args)
