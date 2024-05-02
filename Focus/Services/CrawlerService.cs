@@ -13,11 +13,6 @@ public class CrawlerService(IOptions options) : ICrawlerService
     #region Fields
 
     /// <summary>
-    /// Number of active requests.
-    /// </summary>
-    private int _activeRequests;
-
-    /// <summary>
     /// Parsed options.
     /// </summary>
     private readonly IOptions _options = options;
@@ -136,11 +131,6 @@ public class CrawlerService(IOptions options) : ICrawlerService
             {
                 // Do nothing.
             }
-        }
-
-        while (_activeRequests > 0)
-        {
-            await Task.Delay(100, cancellationToken);
         }
 
         Console.ResetColor();
@@ -442,8 +432,6 @@ public class CrawlerService(IOptions options) : ICrawlerService
     /// <param name="cancellationToken">Cancellation token.</param>
     private async Task HandleQueueEntry(QueueEntry entry, CancellationToken cancellationToken)
     {
-        Interlocked.Increment(ref _activeRequests);
-
         if (cancellationToken.IsCancellationRequested)
         {
             return;
@@ -617,8 +605,6 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 _responseTypes.Add(responseType, 1);
             }
         }
-
-        Interlocked.Decrement(ref _activeRequests);
     }
 
     /// <summary>
