@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Focus.Models;
 using Focus.Models.Interfaces;
 using Microsoft.Playwright;
@@ -42,6 +43,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
     /// </summary>
     private readonly JsonSerializerOptions _serializerOptions = new()
     {
+        Converters = { new JsonStringEnumConverter() },
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true
     };
@@ -97,7 +99,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
     {
         foreach (var uri in _options.Urls)
         {
-            _queue.Add(new(uri, true));
+            _queue.Add(new(uri));
         }
 
         this.UpdateUi(true);
@@ -160,7 +162,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
     public async Task<bool> SetupPlaywright()
     {
         var install = false;
-        
+
         try
         {
             // If this fails, Playwright is most likely not installed.
@@ -198,7 +200,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
                 ConsoleEx.WriteLine("Installing Playwright..");
                 Microsoft.Playwright.Program.Main(["install"]);
             }
-            
+
             ConsoleEx.WriteLine("Setting up Playwright..");
 
             var playwright = await Playwright.CreateAsync();
@@ -269,15 +271,16 @@ public class CrawlerService(IOptions options) : ICrawlerService
             ConsoleEx.WriteAt(0, 3, ConsoleColor.Gray, "Started");
             ConsoleEx.WriteAt(0, 4, ConsoleColor.Gray, "Duration");
             ConsoleEx.WriteAt(0, 5, ConsoleColor.Gray, "Progress");
-            ConsoleEx.WriteAt(0, 6, ConsoleColor.Gray, "Requests");
+            ConsoleEx.WriteAt(0, 6, ConsoleColor.Gray, "In Queue");
+            ConsoleEx.WriteAt(0, 7, ConsoleColor.Gray, "Requests");
 
-            ConsoleEx.WriteAt(10, 8, ConsoleColor.Gray, "< 450 ms");
-            ConsoleEx.WriteAt(10, 9, ConsoleColor.Gray, "> 450 ms < 900 ms");
-            ConsoleEx.WriteAt(10, 10, ConsoleColor.Gray, "> 900 ms");
+            ConsoleEx.WriteAt(10, 9, ConsoleColor.Gray, "< 450 ms");
+            ConsoleEx.WriteAt(10, 10, ConsoleColor.Gray, "> 450 ms < 900 ms");
+            ConsoleEx.WriteAt(10, 11, ConsoleColor.Gray, "> 900 ms");
 
             lock (_responseTypes)
             {
-                top = 11;
+                top = 12;
 
                 foreach (var type in _responseTypes)
                 {
@@ -298,21 +301,31 @@ public class CrawlerService(IOptions options) : ICrawlerService
             this.GetFormattedTimeSpan(duration));
 
         // Update progress.
-        var finished = _queue.Count(n => n.Finished.HasValue);
-        var percent = finished < _queue.Count
-            ? (int)(100.00 / _queue.Count * finished)
+        var finished =
+            _queue.Count(n => n.Attempts == 1) +
+            _queue.Count(n => n.Attempts == 2) * 2 +
+            _queue.Count(n => n.Attempts == 3) * 3;
+
+        var total = _queue.Count * 3;
+        var percent = finished < total
+            ? (int)(100.00 / total * finished)
             : 100;
 
         ConsoleEx.WriteAt(10, 5,
             ConsoleColor.DarkGreen,
-            $"{finished} ({percent}%) of {_queue.Count}");
+            $"{finished} ({percent}%) of {total}                 ");
+        
+        // Update URLs in queue.
+        ConsoleEx.WriteAt(10, 6,
+            ConsoleColor.DarkGreen,
+            _queue.Count);
 
         // Update requests per. second.
         var requestsPerSecond = finished > 0
             ? finished / duration.TotalSeconds
             : 0;
 
-        ConsoleEx.WriteAt(10, 6,
+        ConsoleEx.WriteAt(10, 7,
             ConsoleColor.DarkGreen,
             $"{requestsPerSecond:0.00}/s        ");
 
@@ -327,14 +340,14 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
                 count = new string(' ', 8 - count.Length) + count;
 
-                ConsoleEx.WriteAt(0, 8 + index,
+                ConsoleEx.WriteAt(0, 9 + index,
                     value > 0 ? ConsoleColor.DarkYellow : ConsoleColor.DarkGray,
                     count);
             }
         }
 
         // Update response types.
-        top = 11;
+        top = 12;
 
         lock (_responseTypes)
         {
@@ -364,7 +377,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
         lock (_responseTypes)
         {
-            top = 13 + _responseTypes.Count;
+            top = 14 + _responseTypes.Count;
         }
 
         try
@@ -385,6 +398,299 @@ public class CrawlerService(IOptions options) : ICrawlerService
         catch (Exception ex)
         {
             ConsoleEx.WriteError(ex.Message);
+        }
+    }
+
+    #endregion
+
+    #region Request handling
+
+    /// <summary>
+    /// Crawl the given queue entry and update response data.
+    /// </summary>
+    /// <param name="entry">Queue entry.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    private async Task HandleQueueEntry(QueueEntry entry, CancellationToken cancellationToken)
+    {
+        entry.Attempts++;
+        entry.Started ??= DateTimeOffset.Now;
+        
+        await this.PerformHttpClientRequest(entry, cancellationToken);
+        await this.PerformPlaywrightRequest(entry, cancellationToken);
+
+        if (entry.Attempts == 3)
+        {
+            entry.Finished = DateTimeOffset.Now;    
+        }
+    }
+
+    /// <summary>
+    /// Perform a HTTP client request.
+    /// </summary>
+    /// <param name="entry">Queue entry.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    private async Task PerformHttpClientRequest(IQueueEntry entry, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        
+        string responseType;
+
+        try
+        {
+            using var client = new HttpClient();
+
+            client.Timeout = _options.RequestTimeout > 0
+                ? TimeSpan.FromMilliseconds(_options.RequestTimeout)
+                : Timeout.InfiniteTimeSpan;
+
+            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
+            client.DefaultRequestHeaders.AcceptLanguage.Add(new StringWithQualityHeaderValue("en"));
+            client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue(Program.Name, Program.Version));
+
+            var watch = Stopwatch.StartNew();
+
+            var res = await client.GetAsync(entry.Url, cancellationToken);
+
+            watch.Stop();
+            
+            // Add response data.
+            var statusCode = (int)res.StatusCode;
+            var statusDescription = Tools.GetStatusDescription(statusCode);
+
+            var response = new Response
+            {
+                ContentType = res.Content.Headers.ContentType?.MediaType,
+                RequestType = RequestType.HttpClient,
+                StatusCode = statusCode,
+                StatusDescription = statusDescription,
+                Time = watch.ElapsedMilliseconds
+            };
+
+            foreach (var (key, value) in res.Headers)
+            {
+                if (!response.Headers.ContainsKey(key))
+                {
+                    response.Headers.Add(key, string.Join(";", value));    
+                }
+            }
+
+            foreach (var (key, value) in res.Content.Headers)
+            {
+                if (!response.Headers.ContainsKey(key))
+                {
+                    response.Headers.Add(key, string.Join(";", value));    
+                }
+            }
+            
+            entry.Responses.Add(response);
+            
+            // Increment response time range.
+            var responseTimeRange = watch.ElapsedMilliseconds switch
+            {
+                < 450 => ResponseTimeRange.LessThan450Ms,
+                > 900 => ResponseTimeRange.MoreThan900Ms,
+                _ => ResponseTimeRange.MoreThan450MsLessThan900Ms
+            };
+
+            lock (_responseTimes)
+            {
+                _responseTimes[responseTimeRange]++;
+            }
+            
+            // Add redirect URL to queue.
+            if (res.Headers.Location is not null &&
+                entry.Url.IsBaseOf(res.Headers.Location))
+            {
+                var url = res.Headers.Location.ToString();
+                var alreadyAdded = _queue.Any(n => n.Url.ToString() == url);
+
+                if (!alreadyAdded)
+                {
+                    _queue.Add(new QueueEntry(res.Headers.Location));
+                }
+            }
+            
+            // Set response type.
+            responseType = $"{statusCode} {statusDescription}";
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+        catch (TimeoutException)
+        {
+            responseType = "TIMEOUT";
+            
+            entry.Errors.Add(
+                new(
+                    typeof(TimeoutException).ToString(),
+                    $"Request timeout after {(int)(_options.RequestTimeout / 1000)} second(s)."));
+        }
+        catch (Exception ex)
+        {
+            responseType = ex.GetType().Name.ToUpper();
+            entry.Errors.Add(new(ex));
+        }
+        
+        lock (_responseTypes)
+        {
+            if (_responseTypes.TryGetValue(responseType, out var value))
+            {
+                _responseTypes[responseType] = ++value;
+            }
+            else
+            {
+                _responseTypes.Add(responseType, 1);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Perform a HTTP client request.
+    /// </summary>
+    /// <param name="entry">Queue entry.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    private async Task PerformPlaywrightRequest(IQueueEntry entry, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        string responseType;
+
+        try
+        {
+            var newPageOptions = new BrowserNewPageOptions
+            {
+                ExtraHTTPHeaders = new Dictionary<string, string>
+                {
+                    { "Accept-Language", "en" }
+                }
+            };
+
+            var page = await this.Browser!.NewPageAsync(newPageOptions);
+            var gotoOptions = new PageGotoOptions
+            {
+                Timeout = _options.RequestTimeout,
+                WaitUntil = WaitUntilState.DOMContentLoaded
+            };
+
+            var watch = Stopwatch.StartNew();
+
+            var res = await page.GotoAsync(entry.Url.ToString(), gotoOptions)
+                      ?? throw new Exception($"Unable to get a valid HTTP response from {entry.Url}");
+
+            watch.Stop();
+
+            // Add response data.
+            var contentType = await res.HeaderValueAsync("content-type");
+            var statusCode = res.Status;
+            var statusDescription = Tools.GetStatusDescription(statusCode);
+
+            var response = new Response
+            {
+                ContentType = contentType,
+                RequestType = RequestType.Playwright,
+                StatusCode = statusCode,
+                StatusDescription = statusDescription,
+                Time = watch.ElapsedMilliseconds
+            };
+
+            foreach (var (key, value) in res.Headers)
+            {
+                response.Headers.TryAdd(key, value);
+            }
+
+            entry.Responses.Add(response);
+
+            // Increment response time range.
+            var responseTimeRange = watch.ElapsedMilliseconds switch
+            {
+                < 450 => ResponseTimeRange.LessThan450Ms,
+                > 900 => ResponseTimeRange.MoreThan900Ms,
+                _ => ResponseTimeRange.MoreThan450MsLessThan900Ms
+            };
+
+            lock (_responseTimes)
+            {
+                _responseTimes[responseTimeRange]++;
+            }
+
+            // Add redirect URL to queue.
+            var redirectUrl = await res.HeaderValueAsync("location");
+
+            if (redirectUrl is not null &&
+                Uri.TryCreate(redirectUrl, UriKind.Absolute, out var redirectUri) &&
+                entry.Url.IsBaseOf(redirectUri))
+            {
+                var alreadyAdded = _queue.Any(n => n.Url.ToString() == redirectUrl);
+
+                if (!alreadyAdded)
+                {
+                    _queue.Add(new QueueEntry(redirectUri));
+                }
+            }
+
+            // Set response type.
+            responseType = $"{statusCode} {statusDescription}";
+
+            // Parse HTML for new links.
+            var isHtml = contentType?.Contains("text/html", StringComparison.InvariantCultureIgnoreCase);
+
+            if (isHtml is true)
+            {
+                await this.ParseResponseContent(entry, page);
+            }
+
+            // Close page.
+            await page.CloseAsync();
+        }
+        catch (PlaywrightException ex)
+        {
+            if (ex.Message.StartsWith("net::ERR_ABORTED"))
+            {
+                responseType = "SKIPPED";
+                entry.Errors.Add(new("Skipped", "Skipped because Playwright could not render the URL."));
+            }
+            else
+            {
+                responseType = ex.GetType().Name.ToUpper();
+                entry.Errors.Add(new(ex));    
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+        catch (TimeoutException)
+        {
+            responseType = "TIMEOUT";
+            
+            entry.Errors.Add(
+                new(
+                    typeof(TimeoutException).ToString(),
+                    $"Request timeout after {(int)(_options.RequestTimeout / 1000)} second(s)."));
+        }
+        catch (Exception ex)
+        {
+            responseType = ex.GetType().Name.ToUpper();
+            entry.Errors.Add(new(ex));
+        }
+        
+        lock (_responseTypes)
+        {
+            if (_responseTypes.TryGetValue(responseType, out var value))
+            {
+                _responseTypes[responseType] = ++value;
+            }
+            else
+            {
+                _responseTypes.Add(responseType, 1);
+            }
         }
     }
 
@@ -423,188 +729,6 @@ public class CrawlerService(IOptions options) : ICrawlerService
         output += "              ";
 
         return output;
-    }
-
-    /// <summary>
-    /// Crawl the given queue entry and update tracking data.
-    /// </summary>
-    /// <param name="entry">Queue entry.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    private async Task HandleQueueEntry(QueueEntry entry, CancellationToken cancellationToken)
-    {
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return;
-        }
-
-        entry.Attempts++;
-
-        string responseType;
-
-        try
-        {
-            string? contentType;
-            int statusCode;
-            Stopwatch watch;
-
-            if (entry.PlaywrightRequest)
-            {
-                var newPageOptions = new BrowserNewPageOptions
-                {
-                    ExtraHTTPHeaders = new Dictionary<string, string>
-                    {
-                        { "Accept-Language", "en" }
-                    }
-                };
-                
-                var page = await this.Browser!.NewPageAsync(newPageOptions);
-                var gotoOptions = new PageGotoOptions
-                {
-                    Timeout = _options.RequestTimeout,
-                    WaitUntil = WaitUntilState.DOMContentLoaded
-                };
-
-                watch = Stopwatch.StartNew();
-
-                var res = await page.GotoAsync(entry.Url.ToString(), gotoOptions)
-                          ?? throw new Exception($"Unable to get a valid HTTP response from {entry.Url}");
-
-                watch.Stop();
-
-                statusCode = res.Status;
-                contentType = await res.HeaderValueAsync("content-type");
-
-                var isHtml = contentType?.Contains("text/html", StringComparison.InvariantCultureIgnoreCase);
-
-                if (isHtml is true)
-                {
-                    await this.ParseResponseContent(entry, page);
-                }
-
-                var redirectUrl = await res.HeaderValueAsync("location");
-
-                if (redirectUrl is not null &&
-                    Uri.TryCreate(redirectUrl, UriKind.Absolute, out var redirectUri) &&
-                    entry.Url.IsBaseOf(redirectUri))
-                {
-                    var alreadyAdded = _queue.Any(n => n.Url.ToString() == redirectUrl);
-                    
-                    if (!alreadyAdded)
-                    {
-                        _queue.Add(new QueueEntry(redirectUri, true));
-                    }
-                }
-                
-                await page.CloseAsync();
-            }
-            else
-            {
-                using var client = new HttpClient();
-
-                client.Timeout = _options.RequestTimeout > 0
-                    ? TimeSpan.FromMilliseconds(_options.RequestTimeout)
-                    : Timeout.InfiniteTimeSpan;
-
-                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
-                client.DefaultRequestHeaders.AcceptLanguage.Add(new StringWithQualityHeaderValue("en"));
-                client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue(Program.Name, Program.Version));
-
-                watch = Stopwatch.StartNew();
-
-                var res = await client.GetAsync(entry.Url, cancellationToken);
-
-                watch.Stop();
-
-                contentType = res.Content.Headers.ContentType?.MediaType;
-                statusCode = (int)res.StatusCode;
-                
-                if (res.Headers.Location is not null &&
-                    entry.Url.IsBaseOf(res.Headers.Location))
-                {
-                    var url = res.Headers.Location.ToString();
-                    var alreadyAdded = _queue.Any(n => n.Url.ToString() == url);
-                    
-                    if (!alreadyAdded)
-                    {
-                        _queue.Add(new QueueEntry(res.Headers.Location, true));
-                    }
-                }
-            }
-
-            var statusDescription = Tools.GetStatusDescription(statusCode);
-
-            if (statusCode is >= 200 and <= 300)
-            {
-                entry.Finished = DateTimeOffset.Now;
-            }
-
-            entry.Responses.Add(
-                new()
-                {
-                    ContentType = contentType,
-                    StatusCode = statusCode,
-                    StatusDescription = statusDescription,
-                    Time = watch.ElapsedMilliseconds
-                });
-
-            var responseTimeRange = watch.ElapsedMilliseconds switch
-            {
-                < 450 => ResponseTimeRange.LessThan450Ms,
-                > 900 => ResponseTimeRange.MoreThan900Ms,
-                _ => ResponseTimeRange.MoreThan450MsLessThan900Ms
-            };
-
-            lock (_responseTimes)
-            {
-                _responseTimes[responseTimeRange]++;
-            }
-
-            responseType = $"{statusCode} {statusDescription}";
-        }
-        catch (TimeoutException)
-        {
-            responseType = "ERR_TIMEOUT";
-            entry.Errors.Add(
-                new RequestError($"Request timeout after {(int)(_options.RequestTimeout / 1000)} second(s)."));
-        }
-        catch (Exception ex)
-        {
-            if (ex.Message.StartsWith("net::"))
-            {
-                responseType = ex.Message[5..];
-
-                var len = responseType.IndexOf(' ');
-
-                if (len > -1)
-                {
-                    responseType = responseType[..len];
-                }
-            }
-            else
-            {
-                responseType = ex.Message;
-            }
-
-            entry.Errors.Add(new RequestError(ex.Message));
-        }
-
-        if (!entry.Finished.HasValue &&
-            entry.Attempts > _options.MaxRetryAttempts)
-        {
-            entry.Finished = DateTimeOffset.Now;
-        }
-
-        lock (_responseTypes)
-        {
-            if (_responseTypes.TryGetValue(responseType, out var value))
-            {
-                _responseTypes[responseType] = ++value;
-            }
-            else
-            {
-                _responseTypes.Add(responseType, 1);
-            }
-        }
     }
 
     /// <summary>
@@ -647,7 +771,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
                 if (!alreadyAdded)
                 {
-                    _queue.Add(new QueueEntry(uri, tag == "a"));
+                    _queue.Add(new QueueEntry(uri));
                 }
             }
         }

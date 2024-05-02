@@ -13,17 +13,12 @@ public interface IQueueEntry
     int Attempts { get; }
     
     /// <summary>
-    /// Whether to do a Playwright or HTTP client request.
-    /// </summary>
-    bool PlaywrightRequest { get; }
-    
-    /// <summary>
     /// List of request errors.
     /// </summary>
     List<RequestError> Errors { get; }
     
     /// <summary>
-    /// When the entry was marked as finished.
+    /// When processing finished.
     /// </summary>
     DateTimeOffset? Finished { get; }
     
@@ -31,6 +26,11 @@ public interface IQueueEntry
     /// List of responses.
     /// </summary>
     List<Response> Responses { get; }
+    
+    /// <summary>
+    /// When processing started.
+    /// </summary>
+    DateTimeOffset? Started { get; }
     
     /// <summary>
     /// URL to crawl.

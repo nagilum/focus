@@ -11,4 +11,9 @@ public interface IRequestError
     /// Error message.
     /// </summary>
     string Message { get; }
+    
+    /// <summary>
+    /// Error type.
+    /// </summary>
+    string Type { get; }
 }

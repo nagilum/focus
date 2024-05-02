@@ -3,11 +3,6 @@
 public interface IOptions
 {
     /// <summary>
-    /// Maximum number of retry attempts for non 2xx responses.
-    /// </summary>
-    int MaxRetryAttempts { get; }
-    
-    /// <summary>
     /// Which rendering engine to use.
     /// </summary>
     RenderingEngine RenderingEngine { get; }

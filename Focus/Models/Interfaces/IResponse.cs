@@ -8,6 +8,16 @@ public interface IResponse
     string? ContentType { get; }
     
     /// <summary>
+    /// Headers.
+    /// </summary>
+    Dictionary<string, string> Headers { get; }
+    
+    /// <summary>
+    /// Request type.
+    /// </summary>
+    RequestType RequestType { get; }
+    
+    /// <summary>
     /// HTTP status code.
     /// </summary>
     int StatusCode { get; }

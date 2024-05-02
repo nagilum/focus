@@ -130,37 +130,6 @@ internal static class Program
                     skip = true;
                     break;
                 
-                case "-r":
-                    if (i == args.Count - 1)
-                    {
-                        ConsoleEx.WriteError(
-                            ConsoleColor.Yellow,
-                            "-r ",
-                            0x00,
-                            "must be followed by a number of attempts.");
-                        
-                        return false;
-                    }
-
-                    if (!int.TryParse(args[i + 1], out var attempts) ||
-                        attempts < 1)
-                    {
-                        ConsoleEx.WriteError(
-                            "Invalid value for ",
-                            ConsoleColor.Yellow,
-                            "-r",
-                            0x00,
-                            ": ",
-                            ConsoleColor.DarkRed,
-                            args[i + 1]);
-                        
-                        return false;
-                    }
-
-                    options.MaxRetryAttempts = attempts;
-                    skip = true;
-                    break;
-                
                 case "-t":
                     if (i == args.Count - 1)
                     {
@@ -227,7 +196,7 @@ internal static class Program
     private static void ShowProgramUsage()
     {
         ConsoleEx.WriteLine(ConsoleColor.White, NameAndVersion);
-        ConsoleEx.WriteLine("Crawl a site and log all responses.");
+        ConsoleEx.WriteLine("Crawl and poke a site and see what happens.");
         ConsoleEx.WriteLine();
         ConsoleEx.WriteLine("Usage:");
         
@@ -263,18 +232,6 @@ internal static class Program
             ". Defaults to ",
             ConsoleColor.Yellow,
             "chromium",
-            0x00,
-            ".");
-        
-        ConsoleEx.WriteLine(
-            ConsoleColor.Yellow,
-            "  -r ",
-            ConsoleColor.White,
-            "<attempts>   ",
-            0x00,
-            "Retries all failed (non 2xx) requests n times. Defaults to ",
-            ConsoleColor.Yellow,
-            "0",
             0x00,
             ".");
         

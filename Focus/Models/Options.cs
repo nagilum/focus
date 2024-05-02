@@ -5,11 +5,6 @@ namespace Focus.Models;
 public class Options : IOptions
 {
     /// <summary>
-    /// <inheritdoc cref="IOptions.MaxRetryAttempts"/>
-    /// </summary>
-    public int MaxRetryAttempts { get; set; }
-
-    /// <summary>
     /// <inheritdoc cref="IOptions.RenderingEngine"/>
     /// </summary>
     public RenderingEngine RenderingEngine { get; set; } = RenderingEngine.Chromium;

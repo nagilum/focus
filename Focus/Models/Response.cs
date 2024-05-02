@@ -10,6 +10,16 @@ public class Response : IResponse
     public string? ContentType { get; init; }
 
     /// <summary>
+    /// <inheritdoc cref="IResponse.Headers"/>
+    /// </summary>
+    public Dictionary<string, string> Headers { get; } = [];
+
+    /// <summary>
+    /// <inheritdoc cref="IResponse.RequestType"/>
+    /// </summary>
+    public required RequestType RequestType { get; init; }
+
+    /// <summary>
     /// <inheritdoc cref="IResponse.StatusCode"/>
     /// </summary>
     public required int StatusCode { get; init; }

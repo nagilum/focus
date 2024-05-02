@@ -2,7 +2,7 @@
 
 namespace Focus.Models;
 
-public class QueueEntry(Uri uri, bool playwrightRequest) : IQueueEntry
+public class QueueEntry(Uri uri) : IQueueEntry
 {
     /// <summary>
     /// <inheritdoc cref="IQueueEntry.Added"/>
@@ -13,11 +13,6 @@ public class QueueEntry(Uri uri, bool playwrightRequest) : IQueueEntry
     /// <inheritdoc cref="IQueueEntry.Attempts"/>
     /// </summary>
     public int Attempts { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="IQueueEntry.PlaywrightRequest"/>
-    /// </summary>
-    public bool PlaywrightRequest { get; } = playwrightRequest;
 
     /// <summary>
     /// <inheritdoc cref="IQueueEntry.Errors"/>
@@ -33,6 +28,11 @@ public class QueueEntry(Uri uri, bool playwrightRequest) : IQueueEntry
     /// <inheritdoc cref="IQueueEntry.Responses"/>
     /// </summary>
     public List<Response> Responses { get; } = [];
+
+    /// <summary>
+    /// <inheritdoc cref="IQueueEntry.Started"/>
+    /// </summary>
+    public DateTimeOffset? Started { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="IQueueEntry.Url"/>

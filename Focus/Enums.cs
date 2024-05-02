@@ -13,3 +13,9 @@ public enum ResponseTimeRange
     MoreThan450MsLessThan900Ms,
     MoreThan900Ms
 }
+
+public enum RequestType
+{
+    HttpClient,
+    Playwright
+}
