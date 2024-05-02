@@ -474,18 +474,12 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
             foreach (var (key, value) in res.Headers)
             {
-                if (!response.Headers.ContainsKey(key))
-                {
-                    response.Headers.Add(key, string.Join(";", value));
-                }
+                response.Headers.TryAdd(key.ToLower(), string.Join(";", value));
             }
 
             foreach (var (key, value) in res.Content.Headers)
             {
-                if (!response.Headers.ContainsKey(key))
-                {
-                    response.Headers.Add(key, string.Join(";", value));
-                }
+                response.Headers.TryAdd(key.ToLower(), string.Join(";", value));
             }
 
             entry.Responses.Add(response);
@@ -623,7 +617,7 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
             foreach (var (key, value) in res.Headers)
             {
-                response.Headers.TryAdd(key, value);
+                response.Headers.TryAdd(key.ToLower(), value);
             }
 
             entry.Responses.Add(response);
