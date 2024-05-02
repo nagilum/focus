@@ -419,6 +419,11 @@ public class CrawlerService(IOptions options) : ICrawlerService
         
         await this.PerformHttpClientRequest(entry, cancellationToken);
         await this.PerformPlaywrightRequest(entry, cancellationToken);
+        
+        // TODO: Check for security headers.
+        
+        // TODO: Check for SEO headers and content.
+        // TODO: Get document title from both HTML parsed body and Playwright page.
 
         if (entry.Attempts == 3)
         {
@@ -660,6 +665,8 @@ public class CrawlerService(IOptions options) : ICrawlerService
             {
                 await this.ParseResponseContent(entry, page);
             }
+            
+            // TODO: Run Deque.AxeCore.Playwright tests.
 
             // Close page.
             await page.CloseAsync();
