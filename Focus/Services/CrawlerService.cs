@@ -284,9 +284,9 @@ public class CrawlerService(IOptions options) : ICrawlerService
             {
                 top = 12;
 
-                foreach (var type in _responseTypes.OrderBy(n => n.Key))
+                foreach (var (type, _) in _responseTypes.OrderBy(n => n.Key))
                 {
-                    ConsoleEx.WriteAt(10, ++top, ConsoleColor.Gray, type.Key);
+                    ConsoleEx.WriteAt(10, ++top, ConsoleColor.Gray, type);
                 }
             }
 
@@ -353,9 +353,9 @@ public class CrawlerService(IOptions options) : ICrawlerService
 
         lock (_responseTypes)
         {
-            foreach (var responseType in _responseTypes.OrderBy(n => n.Key))
+            foreach (var (_, value) in _responseTypes.OrderBy(n => n.Key))
             {
-                var count = responseType.Value.ToString();
+                var count = value.ToString();
 
                 count = new string(' ', 8 - count.Length) + count;
 
@@ -555,7 +555,6 @@ public class CrawlerService(IOptions options) : ICrawlerService
             else
             {
                 _responseTypes.Add(responseType, 1);
-                this.ResponseTypes = _responseTypes.Count;
             }
         }
     }
@@ -702,7 +701,6 @@ public class CrawlerService(IOptions options) : ICrawlerService
             else
             {
                 _responseTypes.Add(responseType, 1);
-                this.ResponseTypes = _responseTypes.Count;
             }
         }
     }
@@ -781,6 +779,11 @@ public class CrawlerService(IOptions options) : ICrawlerService
         foreach (var (tag, attr) in selectors)
         {
             var nodes = doc.DocumentNode.SelectNodes($"//{tag}[@{attr}]");
+
+            if (nodes is null)
+            {
+                continue;
+            }
 
             foreach (var node in nodes)
             {
